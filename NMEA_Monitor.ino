@@ -10,7 +10,7 @@
 #define HOW_BUS_CANBUS		1		// use github/_ttlappalainen/CAN_BUS_Shield mpc2515 library
 #define HOW_BUS_NMEA2000	2		// use github/_ttlappalainen/CAN_BUS_Shield + ttlappalainen/NMEA2000 libraries
 
-#define HOW_CAN_BUS			HOW_BUS_NMEA2000
+#define HOW_CAN_BUS			HOW_BUS_CANBUS
 
 
 #define dbg_mon			0
@@ -38,11 +38,8 @@
 
 #elif HOW_CAN_BUS == HOW_BUS_NMEA2000
 
-	#define USE_N2K_CAN 1
-		// define before include NMEA2000_CAN.h
-		// to use SPI MCP2515 (MCP_CAN) can bus controller
-	#include <NMEA2000_CAN.h>
-	#include <N2kMessages.h>
+	#include <NMEA2000_mcp.h>
+	#include <N2kMessages.h>	// for ParseN2kPGN130310()
 
 	#define PASS_THRU_TO_SERIAL		0
 	#define TO_ACTISENSE			0
@@ -53,11 +50,9 @@
 
 	#define PGN_ENV_PARAMETERS    			130310L
 
-	// there is no API to pass the CAN_500KBPS baudrate thru to the underlying
-	// MCP_CAN::begin() method, so I modified NMEA2000_mcp.cpp to hardwire it.
+	// forked and added API to pass the CAN_500KBPS baudrate
 
-	tNMEA2000_mcp nmea2000(CAN_CS_PIN,MCP_8MHz);
-	// tNMEA2000_mcp nmea2000(CAN_CS_PIN,MCP_16MHz,N2k_CAN_INT_PIN);
+	tNMEA2000_mcp nmea2000(CAN_CS_PIN,MCP_8MHz,CAN_500KBPS);
 
 	// const unsigned long ReceiveMessages[] PROGMEM={130310L,0};
 	

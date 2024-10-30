@@ -1,8 +1,13 @@
 //-------------------------------------------
 // NMEA_Monitor.cpp
 //-------------------------------------------
-// the ST2515 module only works reliably with a 10K pullup on MISO
-
+// NOTE THAT setup_platform (compile_arduino.pm) has DEBUG_RXANY=1,
+// which solved the mysterious problem of NMEA_Monitor not getting
+// anything from NMEA_Sensor.
+//
+// The proper solution is probably to setup Extended Messages correctly
+// on both the Sensor and the monitor, but I'm now just relieved that
+// after 12 hours of fussing with it, it started working again.
 
 #include <myDebug.h>
 
@@ -10,7 +15,7 @@
 #define HOW_BUS_CANBUS		1		// use github/_ttlappalainen/CAN_BUS_Shield mpc2515 library
 #define HOW_BUS_NMEA2000	2		// use github/_ttlappalainen/CAN_BUS_Shield + ttlappalainen/NMEA2000 libraries
 
-#define HOW_CAN_BUS			HOW_BUS_CANBUS
+#define HOW_CAN_BUS			HOW_BUS_NMEA2000
 
 
 #define dbg_mon			0

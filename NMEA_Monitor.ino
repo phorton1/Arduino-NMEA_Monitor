@@ -3,11 +3,14 @@
 //-------------------------------------------
 // NOTE THAT setup_platform (compile_arduino.pm) has DEBUG_RXANY=1,
 // which solved the mysterious problem of NMEA_Monitor not getting
-// anything from NMEA_Sensor.
+// anything from NMEA_Sensor, by modifying the behavior of MCP_CAN::
+// mcp2515_init() to allow any messages.
 //
-// The proper solution is probably to setup Extended Messages correctly
-// on both the Sensor and the monitor, but I'm now just relieved that
-// after 12 hours of fussing with it, it started working again.
+// Although the proper solution is probably to setup Extended Messages
+// correctly, after experimentaiton, including setting them on both
+// the Sensor and the monitor, using UL and PROGMEM constants, I could
+// not get them to work, so the DEBUG_RXANY compile flag is currently
+// required for the monitor (but not the sensor).
 
 #include <myDebug.h>
 
@@ -44,7 +47,8 @@
 #elif HOW_CAN_BUS == HOW_BUS_NMEA2000
 
 	#include <NMEA2000_mcp.h>
-	#include <N2kMessages.h>	// for ParseN2kPGN130310()
+	#include <N2kMessages.h>
+	#include <N2kMessagesEnumToStr.h>
 
 	#define PASS_THRU_TO_SERIAL		0
 	#define TO_ACTISENSE			0
@@ -53,13 +57,13 @@
 		#define dbg_mon			1
 	#endif
 
-	#define PGN_ENV_PARAMETERS    			130310L
+	#define PGN_TEMPERATURE    			130316L
 
 	// forked and added API to pass the CAN_500KBPS baudrate
 
 	tNMEA2000_mcp nmea2000(CAN_CS_PIN,MCP_8MHz,CAN_500KBPS);
 
-	// const unsigned long ReceiveMessages[] PROGMEM={130310L,0};
+	const unsigned long ReceiveMessages[] = {PGN_TEMPERATURE,0};
 	
 #endif
 
@@ -68,32 +72,60 @@
 
 #if HOW_CAN_BUS == HOW_BUS_NMEA2000
 
-	// ok, so ignore the dispatcher structures and any
-	// scheduling functions in any and all examples.
-
-	// given that the basic object model is to check for certain PGNs
-	// and then call certain hard coded parsers for those PGNs.
-	// Or example is for 130310
-
 	void onNMEA2000Message(const tN2kMsg &N2kMsg)
 	{
-		display(dbg_mon,"onNMEA2000 message(%d)",N2kMsg.PGN);
-		
-		// 130 is the NMEA2000 message ID for temperature
-		if (N2kMsg.PGN == PGN_ENV_PARAMETERS)
+		#define SHOW_DETAILS	0
+
+		#if SHOW_DETAILS
+			display(dbg_mon,"onNMEA2000 message(%d) priority(%d) source(%d) dest(%d) len(%d)",
+				N2kMsg.PGN,
+				N2kMsg.Priority,
+				N2kMsg.Source,
+				N2kMsg.Destination,
+				N2kMsg.DataLen);
+			// also timestamp (ms since start [max 49days]) of the NMEA2000 message
+			// unsigned long MsgTime;
+		#else
+			display(dbg_mon,"onNMEA2000 message(%d)",N2kMsg.PGN);
+		#endif
+
+
+		if (N2kMsg.PGN == PGN_TEMPERATURE)
 		{
 			uint8_t sid;
+			uint8_t instance;
+			tN2kTempSource source;
 			double temperature1;
 			double temperature2;
-			double pressure;
 
-			bool rslt = ParseN2kPGN130310(N2kMsg,sid,temperature1,temperature2,pressure);
-			float temperature = temperature1;
+			bool rslt = ParseN2kPGN130316(
+				N2kMsg,
+				sid,
+				instance,
+				source,
+                temperature1,
+				temperature2);
 
-			static uint32_t msg_counter = 0;
-			msg_counter++;
+			if (rslt)
+			{
+				float temperature = KelvinToC(temperature1);
+				// temperature2 == N2kDoubleNA
 
-			display(dbg_mon,"Temp(%d): %0.3fC",msg_counter,temperature);
+				static uint32_t msg_counter = 0;
+				msg_counter++;
+
+				#if SHOW_DETAILS
+					display(dbg_mon,"%s(%d) inst(%d) : %0.3fC",
+						N2kEnumTypeToStr(source),
+						msg_counter,
+						instance,
+						temperature);
+				#else
+					display(dbg_mon,"temp(%d) : %0.3fC",msg_counter,temperature);
+				#endif
+			}
+			else
+				my_error("Error parsing PGN(%d)",PGN_TEMPERATURE);
 		}
 	}
 #endif
@@ -115,7 +147,7 @@ void setup()
 
 	delay(2000);
 	display(dbg_mon,"NMEA_Monitor.ino setup(%d) started",HOW_CAN_BUS);
-	Serial.println("WTF IS GOING ON?");
+	Serial.println("WTF");
 	
 
 	#if HOW_CAN_BUS == HOW_BUS_MPC2515
@@ -156,94 +188,43 @@ void setup()
 		#endif
 
 
-		// various alternative attempts to initialize NMEA2000
+		// from DataDisplay.ino example
 
-		#if 1	// from DataDisplay.ino example
+		nmea2000.SetMode(tNMEA2000::N2km_ListenOnly);
+			// N2km_ListenAndNode
 
-			display(dbg_mon,"small startup code",0);
-			Serial.println("and wtf here?");
+		#if PASS_THRU_TO_SERIAL
 
-			nmea2000.SetMode(tNMEA2000::N2km_ListenOnly);
-				// N2km_ListenAndNode
+			nmea2000.SetForwardStream(&Serial);
 
-			#if PASS_THRU_TO_SERIAL
+			// for actiSense program, we comment out the following line
+			// for viewing in serial monitor, we leave it in
 
-				nmea2000.SetForwardStream(&Serial);
-
-				// for actiSense program, we comment out the following line
-				// for viewing in serial monitor, we leave it in
-
-				#if !TO_ACTISENSE
-					nmea2000.SetForwardType(tNMEA2000::fwdt_Text); 	// Show bus data in clear text
-				#endif
-
-				// nmea2000.SetForwardOwnMessages(false);
-					// read/write streams are the same, so dont forward own messages?
-
-			#else
-				nmea2000.EnableForward(false);
+			#if !TO_ACTISENSE
+				nmea2000.SetForwardType(tNMEA2000::fwdt_Text); 	// Show bus data in clear text
 			#endif
 
+			// nmea2000.SetForwardOwnMessages(false);
+				// read/write streams are the same, so dont forward own messages?
 
-			// nmea2000.SetDebugMode(tNMEA2000::dm_ClearText);
-
-			// nmea2000.ExtendReceiveMessages(ReceiveMessages);
-
-			nmea2000.SetMsgHandler(onNMEA2000Message);
-			nmea2000.Open();
-
-		#elif 0
-			// from some random guy at https://forums.ybw.com/threads/nmea2000-yapp.579168/
-
-			nmea2000.SetN2kCANMsgBufSize(16);
-			nmea2000.SetProductInformation("00000001", 1, "Simple Temperature Sender", "1.0", "1.0");
-			nmea2000.SetDeviceInformation(1,  140,  75,  2040);
-			nmea2000.SetMode(tNMEA2000::N2km_NodeOnly, non_vol.deviceAddress);
+		#else
 			nmea2000.EnableForward(false);
-			nmea2000.ExtendTransmitMessages(transmit_messages);
-			nmea2000.Open();
-
-		#elif 0
-			// no effing idea what magic is needed, the documentation sucks
-
-			nmea2000.SetN2kCANMsgBufSize(16);
-			nmea2000.SetN2kCANReceiveFrameBufSize(250);
-			nmea2000.SetN2kCANSendFrameBufSize(250);
+		#endif
 
 
-			nmea2000.SetProductInformation("System Monitor", 10000, "prh Systems", "Model X", "1.0", 1, 1, 0, 0);
-				// const char*: Product name (string)
-				// short unsigned int: Product code (typically a unique identifier)
-				// const char*: Manufacturer name (string)
-				// const char*: Model name (string)
-				// const char*: Version (string)
-				// unsigned char: Software version (often a numeric value, but can be a version number)
-				// short unsigned int: Model ID (another identifier, typically numeric)
-				// unsigned char: Device class (typically a numeric value)
-				// int: Device instance (usually an integer representing the instance of the device)
-			nmea2000.SetDeviceInformation(10, 0, 0, 0, 0); // Device instance, function, etc.
-				// unsigned long _UniqueNumber,
-				// unsigned char _DeviceFunction=0xff,
-				// unsigned char _DeviceClass=0xff,
-				// uint16_t _ManufacturerCode=0xffff,
-				// unsigned char _IndustryGroup=4,
-				// int iDev=0
-			nmea2000.EnableForward(false);
-			nmea2000.SetMode(tNMEA2000::N2km_ListenOnly, 0); // Set to NMEA2000 mode
-			nmea2000.SetMsgHandler(onNMEA2000Message);
+		// nmea2000.SetDebugMode(tNMEA2000::dm_ClearText);
 
-			SPI.begin();
+		#if 0
+			// I could not get this to eliminate need for DEBUG_RXANY
+			// compiile flag in the Monitor
+			nmea2000.ExtendReceiveMessages(ReceiveMessages);
+		#endif
 
-			int retry = 0;
-			bool ok = nmea2000.Open();
-			while (!ok)
-			{
-				warning(0,"nmea2000.open() Retry(%d)",++retry);
-				delay(500);
-				ok = nmea2000.Open();
-			}
+		nmea2000.SetMsgHandler(onNMEA2000Message);
 
-		#endif	// alternative 3 - my original code
+		bool ok = nmea2000.Open();
+		if (!ok)
+			my_error("nmea2000.Open() failed",0);
 
 	#endif	// HOW_CAN_BUS == HOW_BUS_NMEA2000
 

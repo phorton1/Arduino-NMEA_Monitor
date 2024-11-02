@@ -255,8 +255,6 @@ protocols.
 
 ## Actisense Reader Two
 
-So this is where I'm at today.
-
 I spent most of yesterday fruitlessly trying to understand and use the NMEA2000 library
 ActisenseReader object.  Writing my own code to see if I was getting any bytes.  Struggling
 with the tiny ST7789 display as my only debugging output when the USB Serial is in "ACTISENSE"
@@ -270,9 +268,9 @@ The story goes like this.
 
 - The Actinsense App shows the temperature.
 - Apparently when you "Open" the nmea2000 object, it sends out an "address claim" message
-- The address claim message appears to include the values from your setup() SetDeviceInformation() call.
+- The address claim message includes the values from your setup() SetDeviceInformation() call.
 - Then the ActisenseApp shows it as a Device with that stuff.
-- But the App was not showing any Product Information or Configuration Information
+- But the App does not, by default show any Product Information or Configuration Information
 
 *Insert Hours of trying to figure out NMEA2000 modes, ForwardOwnMessages(), etc, etc, etc, etc, etc, etc*
 as I added Product Information, Configuration Information, Instances, and so on to both programs.
@@ -280,67 +278,113 @@ as I added Product Information, Configuration Information, Instances, and so on 
 Note once again that the "address claim" is only sent out by the library **once right after nmea2000,Open()**,
 and that it **never automaticaly sends the Product or Configuration information**,
 
+**IMPORTANT** - I typically use iDev=0 parameter in the setup call SetProductInformation() so that
+subsequently, upon startup, or if queried, I can call SendProductInformation() with its default *idx=0"
+to send it to the network.
+
 
 It looks like when the App **recieves** an address claim it then **requests** product information.
 However I have not at all been able to figure out how to get the NMEA2000 library ActisenseReader object
-to work and/or hook it up to the nmea2000 object so that it responds to those requests.  There are implications
-that it should work, but no concreteness.
+to work and/or hook it up to the nmea2000 object so that it responds to those requests.  There are
+implications in Library docs and comments that it should work, but no concrete descriptions, and
+it did not work out of the box.
 
-Finally, after sorting out the 17 different signatures for "SendProductInformation" I fond one that
-sort of worked.  And the same for SendConfigurationInformation, SendTxPGNList, and SendRxPGNList.
-However, although SendConfigurationInformation() **seems to work as expected** in that the App
-shows the values I set in my setup() method by calling SetConfigurationInformation
+Finally, after sorting out the 17 different signatures for "SendProductInformation" I figured out
+how it works (sort of).  And the same for SendConfigurationInformation, SendTxPGNList, and SendRxPGNList.
 
-**I now send those out when I boot**.  It's better to not use the multi-packet boolean (send em as one big packet each).
+**I now send those out when I boot**.  BTW, It's better to not use the multi-packet boolean parameter
+in any of these calls, as the App seems to miss them occasionally, so I send em as one big packet each.
 
-However it **still does not show my Product Information**.  It shows some hardwired product
-information from the Library somewhere.
 
-**THAT IS BECAUSE THERE IS NO DOCUMENTATION OR CLEAR IDEA OF WHAT THE "DEVICE INDEX" IS**.
+The library seems to imply that it manages several devices, but I have yet to figure out how
+that works.
 
-The library seems to imply that it manages several devices, and seems to imply that device 0
-would normally be the device you construct.  But that's not what's happening.
-
-There is no overview of WTF the whole thing is supposed to do.
-
-- Does a device manage a list of devices?
-- Does the list include itself?
-
-This stuff is so damned complicated.
 
 
 ## Status
 
-- I am getting the correct Device and Configuration information in the App
-- I am not getting the correct Product Information, but I am getting some other hardwired product information
-- My programs (the Monitor) is not responding to the Apps requests, specifically for product information
-- The app asks once per second for an undocumented PGN "Get Operting Mode"
+- I am getting the correct Device, Product and Configuration information in the App
+- My programs (the Monitor) is not responding to the Apps requests, specifically for Product Information
+- The App asks once per second for an undocumented PGN "Get Operting Mode"
 - I can see the bytes coming from the App to the monitor over USB
 - I don't know what to do next
 - I'm not sure if the monitor should be agregating devices or not
 
 
+Here's some example setup() calls:
 
-
-
-
-
-
-
-In any case, the basic object model is that you call **ParseMessages()** in your loop()
-method, and that will, in turn, call a method for each received message.  You then
-look at the message's PGN, and in your own case statement, call the appropriate "parse"
-method
-
-
-
-
+``` c++
+nmea2000.SetProductInformation(
+    "prh_model_100",            // Manufacturer's Model serial code
+    100,                        // Manufacturer's uint8_t product code
+    "ESP32 NMEA Monitor",       // Manufacturer's Model ID
+    "prh_sw_1.0",               // Manufacturer's Software version code
+    "prh_mv_1.0",               // Manufacturer's uint8_t Model version
+    3,                          // LoadEquivalency uint8_t 3=150ma; Default=1. x * 50 mA
+    2101,                       // N2kVersion Default=2101
+    1,                          // CertificationLevel Default=1
+    0                           // iDev (int) index of the device on \ref Devices
+    );
+nmea2000.SetConfigurationInformation(
+    "prhSystems",           // ManufacturerInformation
+    "MonitorInstall1",      // InstallationDescription1
+    "MonitorInstall2"       // InstallationDescription2
+    );
+nmea2000.SetDeviceInformation(
+    1230100, // uint32_t Unique number. Use e.g. Serial number.
+    130,     // uint8_t  Device function=Analog to NMEA 2000 Gateway. See codes on https://web.archive.org/web/20190531120557/https://www.nmea.org/Assets/20120726%20nmea%202000%20class%20&%20function%20codes%20v%202.00.pdf
+    25,      // uint8_t  Device class=Inter/Intranetwork Device. See codes on https://web.archive.org/web/20190531120557/https://www.nmea.org/Assets/20120726%20nmea%202000%20class%20&%20function%20codes%20v%202.00.pdf
+    2046     // uint16_t choosen free from code list on https://web.archive.org/web/20190529161431/http://www.nmea.org/Assets/20121020%20nmea%202000%20registration%20list.pdf
+    );
 ```
-	void
 
 
+## Network Device Enumeration (PGNS) General
+
+- **PGN(60928) - Address Claim** - when a device starts up, as per the standard, it **must**
+  broadcast a PGN(60928) Address Claim message.  If no other device replies (within 250 ms?)
+  then it can assume, at least temporarily, that it "owns" the address it has claimed.
+  If other devices reply, arbitration will likely need to take place (based on some
+  *priority* scheme) to resolve the address conflict.  The PGN(60928) sends out the data
+  that you provide in your setup() SetDeviceInformation() call.
+- **PGN(126993) - Heartbeat** - the Library appears to send out a regular and repeating PGN(126992)
+  Hearbeat message.  This notifies eveyone on the network of their continued presence,
+  and *could* be used by a device that wishes to enumerate all devices to subsequently
+  do requests to obtain more information about specific devices. Strangly the App doesn't do that.
+- **PGN(126996) - Product Information** - This message is sent by a device to broadcast
+  its Product Information.
+- **PGN(126998) - Device Configuration** - This message is sent by a device to broadcast
+  its Device Configuration Information.
+- **PGN(126996) - PGN Request - This message is sent to ask devices to respond with a particular
+  PGN.
 
 
+Other interesting PGNS include
 
-moved some other things, like DS
+- 126992 - System Time
 
+
+In reaponse to a Address Claim, The App sends out REQUEST_PGN(59904==0xea00) for
+PGN(60928) Address Claim (even though the AI I talked to said this is a bad practice).
+
+Weird.
+
+### Dispatching from NMEA_Monitor
+
+After now successfully parsing actisense requests, and getting the REQUEST_PGN(Address Claim),
+how should the Monitor go about dispatching it.
+
+Clearly it depends on the destination and source.  Lets add those to the debugging.
+
+
+### FIRST COMPLETE ACTISENSE REPLY!!!
+
+See AI_CONVERSATION.docx for a long conversation I had with an AI about
+how the NMEA2000 protocol should work with regards to device enumeration.
+
+I finally got the App's log window show a "Complete" status to one of its
+actisense messages being sent via the serial port to the NMEA_Monitor.
+NMEA_Monitor listens for PGN_REQUEST(Address Claim) and calls nmea2000.SendIsoAddressClaim()
+in response.  Timing is an issue as when I was running a Telnet session
+to the NMEA_Monitor the response would *bypass* the log window (resulting in
+a timeout) although it would still show up in the App's DataView window.

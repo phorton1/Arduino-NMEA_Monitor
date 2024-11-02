@@ -101,25 +101,102 @@
 
 	#define PASS_THRU_TO_SERIAL		1
 	#define TO_ACTISENSE			1
-
-	#define PGN_TEMPERATURE    			130316L
+	#define BROADCAST_NMEA200_INFO	0
 
 	// forked and added API to pass the CAN_500KBPS baudrate
 
 	tNMEA2000_mcp nmea2000(CAN_CS_PIN,MCP_8MHz,CAN_500KBPS);
 
-	const unsigned long ReceiveMessages[] = {PGN_TEMPERATURE,0};
+	#define PGN_REQUEST					59904L
+	#define PGN_ADDRESS_CLAIM			60928L
+	#define PGN_PGN_LIST				126464L
+	#define PGN_HEARTBEAT				126993L
+	#define PGN_PRODUCT_INFO			126996L
+	#define PGN_DEVICE_CONFIG			126998L
+	#define PGN_TEMPERATURE    			130316L
+
+	const unsigned long AllMessages[] = {
+		PGN_REQUEST,
+		PGN_ADDRESS_CLAIM,
+		PGN_PGN_LIST,
+		PGN_HEARTBEAT,
+		PGN_PRODUCT_INFO,
+		PGN_DEVICE_CONFIG,
+		PGN_TEMPERATURE,
+		0};
+
 
 	#if TO_ACTISENSE
 
 		#include <ActisenseReader.h>
 		tActisenseReader actisenseReader;
 
-		void handleStreamN2kMsg(const tN2kMsg &msg)
+		void handleActisenseMsg(const tN2kMsg &msg)
 		{
 			// N2kMsg.Print(&Serial);
-			display(dbg_mon,"ACTISENSE(%d)",msg.PGN);
-			nmea2000.SendMsg(msg,-1);
+			display(dbg_mon,"ACTISENSE(%d) source(%d) dest(%d) priority(%d)",
+				msg.PGN,
+				msg.Source,
+				msg.Destination,
+				msg.Priority);
+
+			#if 0
+				if (msg.Destination == 255)
+					nmea2000.SendMsg(msg,-1);
+				// forward the message to everyone ?!?
+			#endif
+			
+			// one would think that the NMEA library automatically handled
+			// all of these somehow.  Perhaps if I derived and was able to
+			// call protected members it would.  For now I am going to
+			// try hardwiring some things
+
+			if (msg.PGN == PGN_REQUEST)	// PGN_REQUEST == 59904L
+			{
+				unsigned long requested_pgn;
+				if (ParseN2kPGN59904(msg, requested_pgn))
+				{
+					display(dbg_mon,"    requested_pgn=%d",requested_pgn);
+					switch (requested_pgn)
+					{
+						case PGN_ADDRESS_CLAIM:
+							nmea2000.SendIsoAddressClaim();
+							break;
+						case PGN_PRODUCT_INFO:
+							nmea2000.SendProductInformation();
+							break;
+						case PGN_DEVICE_CONFIG:
+							nmea2000.SendConfigurationInformation();
+							break;
+
+						// there is no parsePGN126464() method, and there
+						// is only one request for two different types of lists,
+						// althouigh there are separate API methods for sending them.
+						// Furthermore the documenttion says specifically that the
+						// Library handles these. First I will try to just put it
+						// on the net and and see what happens.
+						//
+						// Next I think I need to figure out "Grouip Functions" and
+						// the NMEA200 library N2kDeviceList object.
+						//
+						// Aoon I qill nwws ro begin factoring this code into myNMEA2000 library
+
+						case PGN_PGN_LIST:
+							nmea2000.SendMsg(msg,-1);
+							break;
+							//	case 2:
+							//		nmea2000.SendTxPGNList(255,0,false);
+							//		break;
+							//	case 3:
+							//		nmea2000.SendRxPGNList(255,0,false);
+							//		break;
+					}
+				}
+				else
+					my_error("Error parsing PGN(%d)",msg.PGN);
+			}
+
+			//
 		}
 
 	#endif
@@ -475,27 +552,31 @@ void setup()
 			// device number ...
 
 			nmea2000.SetProductInformation(
-				"23700001", 				// Manufacturer's Model serial code
-				100, 						// Manufacturer's product code
-				"Arduino Gateway",  		// Manufacturer's Model ID
-				"1.0.0.2 (2018-01-10)",  	// Manufacturer's Software version code
-				"1.0.0.0 (2017-01-06)", 	// Manufacturer's Model version
-				3,							// LoadEquivalency 3=150ma; Default=1. x * 50 mA
-				2101,						// N2kVersion          Default=2101
-				1,							// CertificationLevel   Default=1
-				1							// iDev    index of the device on \ref Devices
+				"prh_model_100",            // Manufacturer's Model serial code
+				100,                        // Manufacturer's uint8_t product code
+				"ESP32 NMEA Monitor",       // Manufacturer's Model ID
+				"prh_sw_100.0",             // Manufacturer's Software version code
+				"prh_mv_100.0",             // Manufacturer's uint8_t Model version
+				3,                          // LoadEquivalency uint8_t 3=150ma; Default=1. x * 50 mA
+				2101,                       // N2kVersion Default=2101
+				1,                          // CertificationLevel Default=1
+				0                           // iDev (int) index of the device on \ref Devices
 				);
 			nmea2000.SetConfigurationInformation(
-				"prhSystem2",			// ManufacturerInformation
-                "Install2 Info1",		// InstallationDescription1
-                "Install2Info2" 		// InstallationDescription2
+				"prhSystems",           // ManufacturerInformation
+				"MonitorInstall1",      // InstallationDescription1
+				"MonitorInstall2"       // InstallationDescription2
 				);
 			nmea2000.SetDeviceInformation(
-				112211, // Unique number. Use e.g. Serial number.
-				130, 	// Device function=Analog to NMEA 2000 Gateway. See codes on https://web.archive.org/web/20190531120557/https://www.nmea.org/Assets/20120726%20nmea%202000%20class%20&%20function%20codes%20v%202.00.pdf
-				25, 	// Device class=Inter/Intranetwork Device. See codes on https://web.archive.org/web/20190531120557/https://www.nmea.org/Assets/20120726%20nmea%202000%20class%20&%20function%20codes%20v%202.00.pdf
-				2046 	// Just choosen free from code list on https://web.archive.org/web/20190529161431/http://www.nmea.org/Assets/20121020%20nmea%202000%20registration%20list.pdf
+				1230100, // uint32_t Unique number. Use e.g. Serial number.
+				130,     // uint8_t  Device function=Analog to NMEA 2000 Gateway. See codes on https://web.archive.org/web/20190531120557/https://www.nmea.org/Assets/20120726%20nmea%202000%20class%20&%20function%20codes%20v%202.00.pdf
+				25,      // uint8_t  Device class=Inter/Intranetwork Device. See codes on https://web.archive.org/web/20190531120557/https://www.nmea.org/Assets/20120726%20nmea%202000%20class%20&%20function%20codes%20v%202.00.pdf
+				2046     // uint16_t choosen free from code list on https://web.archive.org/web/20190529161431/http://www.nmea.org/Assets/20121020%20nmea%202000%20registration%20list.pdf
 				);
+
+			// note that we typically use iDev=0 for creating THIS device
+			// in each implementation; it is internal to the NME2000 library
+			// and not broadcast.
 
 		#endif
 
@@ -530,10 +611,11 @@ void setup()
 
 		// nmea2000.SetDebugMode(tNMEA2000::dm_ClearText);
 
-		#if 0
+		#if 1
 			// I could not get this to eliminate need for DEBUG_RXANY
 			// compiile flag in the Monitor
-			nmea2000.ExtendReceiveMessages(ReceiveMessages);
+			nmea2000.ExtendReceiveMessages(AllMessages);
+			nmea2000.ExtendTransmitMessages(AllMessages);
 		#endif
 
 		nmea2000.SetMsgHandler(onNMEA2000Message);
@@ -551,7 +633,7 @@ void setup()
 		#if TO_ACTISENSE
 			actisenseReader.SetReadStream(&Serial);
 			actisenseReader.SetDefaultSource(75);
-			actisenseReader.SetMsgHandler(handleStreamN2kMsg);
+			actisenseReader.SetMsgHandler(handleActisenseMsg);
 		#endif
 
 	#endif	// HOW_CAN_BUS == HOW_BUS_NMEA2000
@@ -586,7 +668,7 @@ const uint8_t requestGetOperatingMode[] 	= {4,	0xa1, 0x01, 0x11, 0x4d};
 
 
 const uint8_t replyGetOperatingMode[]   	= {6, 	0xa1, 0x03, 0x11, 0x02, 0x00, 0x49};
-	// from ydnu92,odf
+	// from ydnu92.pdf
 	// from AI: const uint8_t replyGetOperatingMode[]   	= {8, 	0xa1, 0x01, 0x01, 0x5C};
 
 
@@ -712,46 +794,47 @@ void loop()
 
 	#if HOW_CAN_BUS == HOW_BUS_NMEA2000
 
-		#define NUM_INFOS		4
-		#define MSG_SEND_TIME	2000
-		static int info_sent;
-		static uint32_t last_send_time;
-
-		uint32_t now = millis();
-		if (info_sent < NUM_INFOS && now - last_send_time > MSG_SEND_TIME)
-		{
-			last_send_time = now;
-			nmea2000.ParseMessages(); // Keep parsing messages
+		#if BROADCAST_NMEA200_INFO
+			#define NUM_INFOS		4
+			#define MSG_SEND_TIME	2000
+			static int info_sent;
+			static uint32_t last_send_time;
 	
-			// at this time I have not figured out the actisense reader, and how to
-			// get the whole system to work so that when it asks for device configuration(s)
-			// and stuff, we send it stuff.  However, this code explicitly sends some info
-			// at boot, and I have seen the results get to the reader!
-
-			switch (info_sent)
+			uint32_t now = millis();
+			if (info_sent < NUM_INFOS && now - last_send_time > MSG_SEND_TIME)
 			{
-				case 0:
-					nmea2000.SendProductInformation(
-						255,	// unsigned char Destination,
-						0,		// only device
-						false);	// bool UseTP);
-					break;
-				case 1:
-					nmea2000.SendConfigurationInformation(255,0,false);
-					break;
-				case 2:
-					nmea2000.SendTxPGNList(255,0,false);
-					break;
-				case 3:
-					nmea2000.SendRxPGNList(255,0,false);	// empty right now for the sensor
-					break;
+				last_send_time = now;
+				nmea2000.ParseMessages(); // Keep parsing messages
+
+				// at this time I have not figured out the actisense reader, and how to
+				// get the whole system to work so that when it asks for device configuration(s)
+				// and stuff, we send it stuff.  However, this code explicitly sends some info
+				// at boot, and I have seen the results get to the reader!
+
+				switch (info_sent)
+				{
+					case 0:
+						nmea2000.SendProductInformation(
+							255,	// unsigned char Destination,
+							0,		// only device
+							false);	// bool UseTP);
+						break;
+					case 1:
+						nmea2000.SendConfigurationInformation(255,0,false);
+						break;
+					case 2:
+						nmea2000.SendTxPGNList(255,0,false);
+						break;
+					case 3:
+						nmea2000.SendRxPGNList(255,0,false);	// empty right now for the sensor
+						break;
+				}
+
+				info_sent++;
+				nmea2000.ParseMessages();
+				return;
 			}
-
-			info_sent++;
-			nmea2000.ParseMessages();
-			return;
-		}
-
+		#endif	// BROADCAST_NMEA200_INFO
 
 		// fast loop
 		nmea2000.ParseMessages();
@@ -828,7 +911,7 @@ void loop()
 				else
 					clearbuf("BOGUS BYTE");
 			}
-		#elif 0 && TO_ACTISENSE
+		#elif TO_ACTISENSE
 			actisenseReader.ParseMessages();
 		#endif
 		

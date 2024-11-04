@@ -33,11 +33,11 @@
 #define dbg_mon			0
 
 #define CAN_CS_PIN		5
-#define USE_HSPI		0
+#define USE_HSPI		1
 	// use ESP32 alternative HSPI for mcp2515 so that it
 	// isn't mucked with by the st7789 display
 	// only currently supported with HOW_BUS_NMEA2000
-#define WITH_ST7789		0
+#define WITH_OLED		1
 #define WITH_WIFI		1
 #define WITH_TELNET		1
 
@@ -69,10 +69,14 @@
 	#endif
 #endif
 
-#if WITH_ST7789
-	#include <myST7789Monitor.h>
-	myST7789Monitor mon;
-	#define WITH_ST7789_TASK	1
+#if WITH_OLED
+	#include <myOledMonitor.h>
+	#define USE_OLED_DRIVER
+	#define WITH_OLED_TASK		1
+
+	myOledMonitor mon(DRIVER_ST7789,1,WITH_OLED_TASK);
+		// alternative = DRIVER_SSD1306
+		// we always want the smallest font in this program
 #endif
 
 
@@ -100,7 +104,7 @@
 	#include <N2kMessagesEnumToStr.h>
 
 	#define PASS_THRU_TO_SERIAL		1
-	#define TO_ACTISENSE			1
+	#define TO_ACTISENSE			0
 	#define BROADCAST_NMEA200_INFO	0
 
 	// forked and added API to pass the CAN_500KBPS baudrate
@@ -218,7 +222,7 @@
     static void onTelnetConnect(String ip)
     {
         display(dbg_mon,"Telnet connected from %s",ip.c_str());
-		#if WITH_ST7789
+		#if WITH_OLED
 			mon.println("TELNET(%s)",ip.c_str());
 		#endif
 
@@ -252,7 +256,7 @@
 		telnet_connected = false;
 
         display(dbg_mon,"Telnet disconnect",0);
-		#if WITH_ST7789
+		#if WITH_OLED
 			mon.println("TELNET DISCONNECT");
 		#endif
     }
@@ -260,7 +264,7 @@
     void onTelnetReconnect(String ip)
     {
         display(dbg_mon,"Telnet reconnected from %s",ip.c_str());
-		#if WITH_ST7789
+		#if WITH_OLED
 			mon.println("RE-TELNET(%s)",ip.c_str());
 		#endif
 
@@ -282,7 +286,7 @@
     void onTelnetConnectionAttempt(String ip)
     {
         display(dbg_mon,"Telnet attempt from %s",ip.c_str());
-		#if WITH_ST7789
+		#if WITH_OLED
 			mon.println("TELNET TRY(%s)",ip.c_str());
 		#endif
     }
@@ -292,7 +296,7 @@
 		// getting blank lines for some reason
 		#if 0
 			display(dbg_mon,"Telnet: %s",command.c_str());
-			#if WITH_ST7789
+			#if WITH_OLED
 				mon.println(command.c_str());
 			#endif
 		#endif
@@ -302,7 +306,7 @@
     void init_telnet()
     {
         display(dbg_mon,"Starting Telnet",0);
-		#if WITH_ST7789
+		#if WITH_OLED
 			mon.println("Starting Telnet");
 		#endif
         telnet.onConnect(onTelnetConnect);
@@ -336,9 +340,9 @@
 			// 1 = show just temperatures and PGNs
 			// 2 = shot detailed meessage header, temperature details, and PGNs
 
-		#define ST7789_DETAILS		0
+		#define OLED_DETAILS		0
 			// 0 = show only PGNs on st7789
-			// 1 = show Temps and PGNS on ST7789
+			// 1 = show Temps and PGNS on OLED
 
 		static uint32_t msg_counter = 0;
 		msg_counter++;
@@ -408,7 +412,7 @@
 					return;
 				}
 
-				#if WITH_ST7789 && ST7789_DETAILS
+				#if WITH_OLED && OLED_DETAILS
 					mon.println("temp(%d) %0.3fC",msg_counter,temperature);
 				#endif
 			}
@@ -431,7 +435,7 @@
 					display(dbg_mon,"PGN(%d)=%d",msg_counter,msg.PGN);
 				#endif
 
-				#if WITH_ST7789
+				#if WITH_OLED
 					mon.println("PGN(%d)=%d",msg_counter,msg.PGN);
 				#endif
 			}
@@ -465,9 +469,11 @@ void setup()
 
 	display(dbg_mon,"NMEA_Monitor.ino setup(%d) started",HOW_CAN_BUS);
 	
-	#if WITH_ST7789
-		mon.init(1,WITH_ST7789_TASK);
-			// font_size,with_task,with_display,rotation
+	#if WITH_OLED
+		mon.init(1,WITH_OLED_TASK);
+			// defaults:
+			// with_display=false
+			// rotation=1
 		mon.println("NMEA_Monitor(%d)",HOW_CAN_BUS);
 	#endif
 
@@ -475,9 +481,11 @@ void setup()
 		pinMode(LED_WIFI,OUTPUT);
 		digitalWrite(LED_WIFI,0);
 		
+		#define USE_SSID	apartment_ssid
+
 		WiFi.mode(WIFI_STA); //Optional
-		WiFi.begin(private_ssid, private_pass);
-		display(dbg_mon,"Connecting to %s",private_ssid);
+		WiFi.begin(USE_SSID, private_pass);
+		display(dbg_mon,"Connecting to %s",USE_SSID);
 		delay(500);
 		bool connected = (WiFi.status() == WL_CONNECTED);
 
@@ -493,8 +501,8 @@ void setup()
 		{
 			digitalWrite(LED_WIFI,1);
 			String ip = WiFi.localIP().toString();
-			display(dbg_mon,"Connecting to %s at %s",private_ssid,ip.c_str());
-			#if WITH_ST7789
+			display(dbg_mon,"Connecting to %s at %s",USE_SSID,ip.c_str());
+			#if WITH_OLED
 				mon.println("IP: %s",ip.c_str());
 			#endif
 
@@ -504,8 +512,8 @@ void setup()
 		}
 		else
 		{
-			my_error("Could not connect to %s",private_ssid);
-			#if WITH_ST7789
+			my_error("Could not connect to %s",USE_SSID);
+			#if WITH_OLED
 				mon.println("WIFI ERROR!!!");
 			#endif
 		}
@@ -716,7 +724,7 @@ static void handle_request()
 				Serial.write(0x0D);
 				Serial.write(0x0A);
 				display(0,"SEND_REPLY",0);
-				#if WITH_ST7789
+				#if WITH_OLED
 					mon.println("SEND_REPLY");
 				#endif
 			}
@@ -734,7 +742,7 @@ static void clearbuf(const char *msg)
 	if (msg)
 	{
 		display(0,"clearbuf(%s)",msg);
-		#if WITH_ST7789
+		#if WITH_OLED
 			mon.println("clearbuf(%s)",msg);
 		#endif
 	}
@@ -766,7 +774,7 @@ static void showbuf()
 	}
 
 	display(0,"actisense msg: %s",active_str);
-	#if WITH_ST7789
+	#if WITH_OLED
 		mon.println(active_str);
 	#endif
 

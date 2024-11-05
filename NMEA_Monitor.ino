@@ -38,6 +38,7 @@
 	// isn't mucked with by the st7789 display
 	// only currently supported with HOW_BUS_NMEA2000
 #define WITH_OLED		1
+	// driver constant 0 to turn it off
 #define WITH_WIFI		1
 #define WITH_TELNET		1
 
@@ -71,12 +72,9 @@
 
 #if WITH_OLED
 	#include <myOledMonitor.h>
-	#define USE_OLED_DRIVER
 	#define WITH_OLED_TASK		1
-
-	myOledMonitor mon(DRIVER_ST7789,1,WITH_OLED_TASK);
-		// alternative = DRIVER_SSD1306
-		// we always want the smallest font in this program
+	myOledMonitor mon(DRIVER_ST7789_320x170,1,WITH_OLED_TASK);
+		// we always want the smallest font(1) in this program
 #endif
 
 
@@ -340,7 +338,7 @@
 			// 1 = show just temperatures and PGNs
 			// 2 = shot detailed meessage header, temperature details, and PGNs
 
-		#define OLED_DETAILS		0
+		#define OLED_DETAILS		1
 			// 0 = show only PGNs on st7789
 			// 1 = show Temps and PGNS on OLED
 
@@ -470,10 +468,8 @@ void setup()
 	display(dbg_mon,"NMEA_Monitor.ino setup(%d) started",HOW_CAN_BUS);
 	
 	#if WITH_OLED
-		mon.init(1,WITH_OLED_TASK);
-			// defaults:
-			// with_display=false
-			// rotation=1
+		mon.init(1); 	// rotation
+			// with_display = false;
 		mon.println("NMEA_Monitor(%d)",HOW_CAN_BUS);
 	#endif
 

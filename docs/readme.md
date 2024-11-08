@@ -1,390 +1,322 @@
 # NMEA_Monitor
 
-An ESP32 NMEA 2000 monitor/gateway.
 
-- Currently uses an mpc2515 CAN module
-- Supports an st7889 oled display
-- Has WiFi and Telnet Accessibility
-- Can communicate with my NMEA_Sensor example
-- Can communicate (act as a gateway) to a Win10 Actisense Reader application over USB Serial
+Notes after [history.md](history.md)
 
 
-## Pre NMEA2000 library notes
+## Handling Actisense GetProductInformation request
 
-I started off by getting two ESP32's to talk to each other over CANBUS with mpc2515's
-using the **audowp mcp2515** library.  That was relatively easy, perhaps 1/2 day
+I have not figured out how you are supposed to hook the ActisenseReader
+upto the library so that the library will do what it advertises, which
+is supposedly to respond to standard PGN Requests.
 
-Then I tried to figure out how to work with NMEA 2000, specifically, the
-**ttlappalainen/NMEA2000** library on github.  Although there seem to be useful
-examples at first blush, in reality, the library, and it's usage are very complicated.
-It took me several days to understand the architecture well enough to implement
-a relatively simple NMEA2000 Sensor and Monitor, and subsequently, it has taken
-much more time to try to refine those so that they work well enough with the
-**Actisense NMEA Reader** that I will feel confident to try to attach the Monitor
-to my Fishcher Panda Generator to see if I can talk to it.
+- I have verified that my monitor's ActisenseReader object receives
+  the GetProductInformation PGN_REQUEST(59904,126996) from the App.
+- I have proven that I *can* respond to the request manually
+  by calling nmea2000.SendProductInformation() in response.
+- I have also built support for other "standard" PGNs
+  but thus far they have never been called by the App.
 
-The **first step** was to implement simple CANBUS communication using the
-*ttlappalainen/CAN_Bus_Shield* library, which I renamed to *NMEA2000_mcp2515* on
-my machine, for reasons I might explain later.  When I got that working, I then
-tried to move up to the **NMEA2000** level.
+These are the PGNS my current monitor's ActisenseReader callback
+method responds to:
 
-Before I did that, however, I played around with other things like creating
-my own **DS18B20 temperature sensor library** and **ST7789 oled display** library.
-Eventually, for simplicity, I removed the actual temperature sensor from the
-NMEA_Sensor application, and just let it send a series of known temperatures.
-However, I had hopes of still using the ST7789 display in some meaningful
-manner.
-
-It wasn't until (much) later, after I had NMEA2000 basically working that
-I had to go back and really take a look at the interactions between the
-st7789 display and the mcp2515 module, both of which use SPI, and spend
-at least a full day just resolving the conflicts by using the ESP32's
-2nd SPI Device (HSPI) for the mcp2515, since the st7789 display is
-soldered to the board using the regular ESP32 (VSPI) SPI device.
-That, and many other dealings with timings due to Serial display
-debugging, and so, before I wrote this document.
-
-Nonetheless I had the CAN_BUS_Shield library working with my little
-demo as I then tried the NMEA2000 library.
+- PGN_ADDRESS_CLAIM			60928L
+- PGN_PRODUCT_INFO			126996L
+- PGN_DEVICE_CONFIG			126998L
+- PGN_PGN_LIST				126464L
 
 
-## NMEA2000 Library Notes
 
-I will try to be kind to Timo in these notes.  There is a vast amount of
-work that he and other have done to get the NMEA2000 Library to where it
-is, so that I could even try it.
+### Try SendMsg(actisens_msg,-1) to buss
 
-Having said that, although the author and a few other websites imply that
-the library is somewhat easy to use, and seemingly give useful examples, upon closer
-examination, neither of those are quite accurate.  The library is actually
-very complicated to use, and the examples assume a relatively large amount
-of knowledge about NMEA2000 and the library itself, and are not anywhere
-clearly explained.
+There is a define in my monitor program which allows me,
+instead of explicitly replying, to "put the msg on the bus" by
+calling nmea2000.SendMsg(msg,-1).
 
-Likewise, the documentation is limited, once again assuming significant
-amounts of knowledge about NMEA2000 and the library itself.  There is a
-single short tutorial, consisting of one or two paragraphs, with instructions
-to compile a given example program after changing various #defines in
-the source code.  The author mostly assumes the use of a specific Arduino
-board, and doesn't really give any kind of an overview of how the example
-fits into the larger picture of an NMEA2000 network.   It relies heavily
-upon assumed knowledge about other programs, like Actisense Reader, which
-are themselves propriatary, or OpenSkipper, which is a hugely complicated
-project of its own.
+I was kind of hoping that the Library would then respond.
+It didn't.  I double checked and I have nmea200.SetForwardOwnMessages(true)
+in my setup() method.
 
-So, here I try to leave a few breadcrumbs for someone that might follow
-a similar path that I have taken.
+So, this morning I dig into
+
+- under what circumstances does the Library handle GetProductInfoRequet, and
+- how am I best supposed to get that to happen with an ActisenseReader object
+
+One big question is whether or not I need to create and maintain a
+DeviceList object, as perhaps IT is responsible for aggregating devices
+and responding with multiple GetProductInfo requests.
+
+But it seems that AT LEAST my monitor should somehow respond with
+it's own product information, so that comes first.
+
+### Library Exploration SendProductInformation()
+
+I shouldn't have to do this.
+
+Grep for SendProductInformation() shows a variety of places where it is called.
+
+> This is automatically used by class. You only need to use this, if
+you want to write your own behavior for providing product information.
+
+Really?  And how, kind sir, am I supposed to get that to happen?
+
+> "Currently Product Information and Configuration Information will we
+pended on ISO request. This is because specially for broadcasted
+response it may take a while, when higher priority devices sends
+their response."
+
+Once again, very difficult to understand.  I can find no
+overview anywhere about these "pending" messages are or
+if they are important, the core, of what I am looking for.
+
+**How is this library supposed to work as a system**.
+
+It sends out Heartbeats, that must mean that something is
+hooked up correctly.
+
+Continuing wasting my time looking for answers.
+
+Maybe I should implement a serial command interface so that
+the monitor can send the sensor a request and see what happens?
+
+I will keep browsing through the miles of code before deciding
+the next line of code I write.
+
+Possible next greps:
+
+- RespondISORequest()
+- SendPendingInformation()
+- tN2kGroupFunctionHandlerForPGN126996::HandleRequest()
 
 
-### Basic Library Concepts
+> See document https://web.archive.org/web/20150910070107/http://www.nmea.org/Assets/20140710%20nmea-2000-060928%20iso%20address%20claim%20pgn%20corrigendum.pdf
+For requirements for handling Group function request for PGN 60928
 
-The NMEA2000 library can work with many different MPU and interfaces.
-Some modules essentially convert the CANBUS signals into serial TX/RX
-signals that are handled by peripherals in the silicon of various
-MPUs.  Teensies and ESP32's, for example, have internal CANBUS peripherals.
-
-I didn't have any of those Serial CANBUS modules when I started.
-I have ordered some, but it takes weeks for things to get here.
-I had two mpc2515 CANBUS modules that I had bought years ago and had never tried.
-Hence why I started with the autowp mcp2515 library.
-
-Although Timo also provides an NMEA2000_esp32 library, and of course, that
-was the first thing I looked at, it took me a while to understand that
-the esp32 library was only for those Serial CANBUS modules hooked to
-RX/TX pins on the ESP32.  It then took me an additional while to figure
-out how to get the mpc2515 working with the NMEA2000 library.
+Sure, why not send me entirely back to square 1.
+But these comments are not for me, they are for Timo to remember how he got there.
 
 
-### NMEA2000_mcp Library
 
-It turns out that to use the NMEA2000 library with the mcp2515 you need
-THREE libraries.  First you need the **CAN_BUS_Shield** library which
-Timo did not, per se, write, but merely ported into his project. Second,
-you need the basic **NMEA2000** library.  What was not clear was that
-you need the **NMEA2000_mcp** library, and that, in fact, THAT is the object
-that you really create.
+### grep for SendPendingInformation()
 
-```
-#define CAN_CS_PIN 5
-#include <NMEA2000_mcp.h>
-tNMEA2000_mcp nmea2000(CAN_CS_PIN,MCP_8MHz,CAN_500KBPS);
-```
+This looks promising as a part of a scheduled response handler.
+**Its called directly from ParseMesages()** and so looks like its
+part of the baked in request handler.
 
-I have to use a non-standard CS pin becaue the standard ESP32 CS (15)
-is soldered to the st7899 dispoay.
-
-But, importantly, it took me a full day to figure out the simple include
-and ctor, and then some.  tNMEA2000_mcp is **derived** from the *tNMEA2000**
-class, so it actually sits above the main library as the entry point.
-But the exmples are SO complicated.
-
-For exmaple, there is a file, NMEA2000_CAN.h in the main library, that
-several exmaples use.  And it can be made to include the NMEA2000_mcp
-library by the akward use of a compile time define.
+Actually, a closer look at ParseMessages() is warranted.
 
 ```
-#define USE_N2K_CAN 1  // for use with SPI and MCP2515 can bus controller
-#define USE_N2K_CAN 2  // for use with due based CAN
-#define USE_N2K_CAN 3  // for use with Teensy 3.1/3.2/3.5/3.6 boards
-#define USE_N2K_CAN 4  // for use with avr boards
-#define USE_N2K_CAN 5  // for use with socketCAN (linux, etc) systems
-#define USE_N2K_CAN 6  // for use with MBED (ARM) systems
-#define USE_N2K_CAN 7  // for use with ESP32
-#define USE_N2K_CAN 8  // for use with Teensy 3.1/3.2/3.5/3.6/4.0/4.1 boards
-#define USE_N2K_CAN 9  // for use with Arduino CAN API (e.g. UNO R4 or Portenta C33)
+    if ( OpenState!=os_Open ) {
+      if ( !(Open() && OpenState==os_Open) ) return;  // Can not do much
+    }
+
+    if (dbMode != dm_None) return; // No much to do here, when in Debug mode
+
+    SendFrames();
+    SendPendingInformation();
+#if defined(DEBUG_NMEA2000_ISR)
+    TestISR();
+#endif
+
+    while (FramesRead<MaxReadFramesOnParse && CANGetFrame(canId,len,buf) ) {           // check if data coming
+        FramesRead++;
+        N2kMsgDbgStart("Received frame, can ID:"); N2kMsgDbg(canId); N2kMsgDbg(" len:"); N2kMsgDbg(len); N2kMsgDbg(" data:"); DbgPrintBuf(len,buf,false); N2kMsgDbgln();
+        MsgIndex=SetN2kCANBufMsg(canId,len,buf);
+        if (MsgIndex<MaxN2kCANMsgs) {
+          if ( !HandleReceivedSystemMessage(MsgIndex) ) {
+            N2kMsgDbgStart(" - Non system message, MsgIndex: "); N2kMsgDbgln(MsgIndex);
+            ForwardMessage(N2kCANMsgBuf[MsgIndex]);
+          }
+//          N2kCANMsgBuf[MsgIndex].N2kMsg.Print(Serial);
+          RunMessageHandlers(N2kCANMsgBuf[MsgIndex].N2kMsg);
+          N2kCANMsgBuf[MsgIndex].FreeMessage();
+          N2kMsgDbgStart(" - Free message, MsgIndex: "); N2kMsgDbg(MsgIndex); N2kMsgDbgln();
+        }
+    }
+
+#if !defined(N2K_NO_HEARTBEAT_SUPPORT)
+    SendHeartbeat();
 ```
 
-This is presumably so that you can write an application independent of the
-MPU and/or CAN module. OK, I'll buy that :-)  But in practice it turned out
-to be very hard to figure out that, even though you change the define, you
-MUST ALSO change the object declaration (i.e. use tNMEA2000_mcp for USE_N2K_CAN==1),
-at least to the degree that you *might* want to access mcp2515 specifics in
-your implementaiton.
+Note that parseMessages() calls SendHeartbeat() directly.
 
-Which it turned out that I very much needed to do to figure it out and get it working.
-My mpc2515 module has an **8Mhz** crystal soldered to it.   All of Timo's exmaples,
-when you finally get to the mpc215, have the 16Mhz constant, not the 8Mhz one in their
-ctor.  It was an act of faith to change it in the tNMEA2000_mcp ctor.
+I think I can presume that SendPendingInformation() will do something
+if a request is pending, but I'm guessing that the call to RunMessageHandlers()
+wouild be what enqueues the pending request.
 
-But worse, all of my previous examples, **already working code**, were using a 500kbs CANBUS
-bus speed, and when I could not get anything to work with the NMEA200, I **had** to fall back
-to the working code and work my way back up from the autowp mpc2515 library, make sure it could
-talk to the CAN_BUS_Shield library, and then use one of those to determine if my NMEA_Sensor
-(transmitter) was at fault or my NMEA_Monitor was at fault.   That's when, through laborious
-tracing of the mountain of code, I realized, not being able to sleep one night, that the
-problem was probably the bus speed.   It turns out that, although the CAN_BUS_Shield library
-allows for parameterization of the bus speed in it's ctor, the NMEA2000_mcp ctor called it
-with a hardwired bus speed of 250kbps.
+By the way, these are all PUBLIC methods. 100's of em.
+But lol, mpc_can device is private. ok.
 
-This is about when I forked all three libraries, so that I could have a stable starting point,
-as I modified the NMEA2000_mcp ctor and object so that I couild pass in 500kps, so that I
-could at least see if CAN packets were being sent by the Sensor, and then could send CAN
-packets and see if anything happened on the Monitor side.
 
-Sheesh, it took almost two full days to get a simple 130316 (temperature) packet from
-the Sensor to the Monitor.  But not before I had to also learn, the hard way, about the
-basic object model;
+From the implementation of RunMessageHandlers()
+I see that tMsgHandler's are a linked list of objects
+and that a (protected member) pointer variable called
+**MsgHandlers** is the list that is used..
 
-BTW, I hate the method and parameter names, the order of declarations, and lack of
-clarity in the H files of all of these libraries.   Mountains of stuff, private,
-protected, private, public, private, with large re-gurgitated comment sections making
-it hard to look at.
 
-The Sensor builds a specific 130316 message using SetN2kPGN130316(), and calls SendMsg:
+The MsgHandlers variable is initialize to 0 in the NMEA2000 ctor()
+and referenced in
 
-```
-	tN2kMsg mzg; 	// it's a class, not a structure!
-	SetN2kPGN130316(
-		mzg,
-		255,// unsigned char SID; 255 indicates "unused"
-		93,	// unsigned char TempInstance "should be unique per device-PGN"
-		N2kts_RefridgerationTemperature, // tN2kTempSource enumerated type
-		CToKelvin(tempDouble),
-		N2kDoubleNA	// double SetTemperature
-	);
+- RunMessageHandler()
+- AttachMsgHandler()
+- DetachMsgHandler()
 
-	// SIDS have the semantic meaning of tying a number of messages together to
-	// 		one point in time.  If used, they should start at 0, and recyle after 252
-	// 		253 and 254 are reserved.
+So, now I'm guessing that there will be an AttachMsgHandleer() someplace that
+has been called.
 
-	nmea2000.SendMsg(mzg);
-```
+### grep for AttachMsgHandler()
 
-Those comments I added were hard fought for.
+Unfortunately for me, it appears as if AttachMsgHandler() is
+only intended as a client API and is used in a couple of
+example programs as such.   It does not appear to be part
+of any automatic internal system for handling requests.
 
-The Monitor sets an "onMessage" callback and calls ParseMessages() tightly from loop().
-When the monitor gets a message, it calls onMessage() and you can call a specific
-parser to interpret the message.
+### grep for HandleReceivedSystemMessage()
+
+Oops, I think I missed the main entry point for this
+in the implementation of ParseMessages().   In ITs
+implementation I note this:
 
 ```
-...
-nmea2000.SetMsgHandler(onNMEA2000Message);
-...
-void onNMEA2000Message(const tN2kMsg &msg)
-{
-	if (msg.PGN == PGN_TEMPERATURE)
-	{
-		uint8_t sid;
-		uint8_t instance;
-		tN2kTempSource source;
-		double temperature1;
-		double temperature2;
+bool tNMEA2000::HandleReceivedSystemMessage(int MsgIndex) {
+  bool result=false;
 
-		bool rslt = ParseN2kPGN130316(
-			msg,
-			sid,
-			instance,
-			source,
-			temperature1,
-			temperature2);
+   if ( N2kMode==N2km_SendOnly || N2kMode==N2km_ListenAndSend ) return result;
+
+    if ( N2kCANMsgBuf[MsgIndex].SystemMessage ) {
+      if ( ForwardSystemMessages() ) ForwardMessage(N2kCANMsgBuf[MsgIndex].N2kMsg);
+      if ( N2kMode!=N2km_ListenOnly ) { // Note that in listen only mode we will not inform us to the bus
+        switch (N2kCANMsgBuf[MsgIndex].N2kMsg.PGN) {
+          case 59392L: /*ISO Acknowledgement*/
+            break;
+          case 59904L: /*ISO Request*/
+            HandleISORequest(N2kCANMsgBuf[MsgIndex].N2kMsg);
+            break;
+          case 60928L: /*ISO Address Claim*/
+            HandleISOAddressClaim(N2kCANMsgBuf[MsgIndex].N2kMsg);
+            break;
+          case 65240L: /*Commanded Address*/
+            HandleCommandedAddress(N2kCANMsgBuf[MsgIndex].N2kMsg);
+            break;
+#if !defined(N2K_NO_GROUP_FUNCTION_SUPPORT)
+          case 126208L: /*NMEA Request/Command/Acknowledge group function*/
+            HandleGroupFunction(N2kCANMsgBuf[MsgIndex].N2kMsg);
+            break;
+#endif
+        }
+      }
+      result=true;
+    }
+
+  return result;
+}
 ```
 
-Whew.  OK, I understand, there are hundreds of messages.
+I am N2km_ListenAndNode, so make it past the short return.
+Apparently the message buffer object knows if it is a SystemMessage.
+I will start by assuming this presumed boolean member variable is correct.
+Which means that one of the likely candidates for handling the message
+will be called.  So I believe this is at the core of the automatic
+handling.
 
-After that was somewhat working reliably, I decided to try the **Actisense** stuff.
+However, I don't see, yet, if there is a connection between me
+calling SendMessage(actisense_message) and that message making
+it back into the devices bus.
 
+So, once again, I cannot see the NMEA2000 forward bus
 
-
-## Actisense Reader One
-
-So far, all of this document was basically presented in a few lines of sparse
-text in one of Timo's documents.  Then we *merely* install this app, set a
-few variables, and we should see it in the Actisense reader, and I guess
-everybody can go home at that point.
-
-LOLOL.
-
-I downloaded and installed this propriatary program, still learning, not understanding,
-but lo and behold, the temperature made it from the Sensor, to the Monitor, to the USB
-Serial port, to the program and showed up on my laptop.
-
-Then I changed one thing, I don't know what it was, and it stopped working, and it
-took me 12 hours to figure out that it was either the baud rate problem or the SPI
-problem, before I was able to get it to work again.
-
-After some sleep I was satisified that Actisense was sort of working.
-
-But unfortunately that's where both the documentation and the examples and
-any kind of systemic overview of the concepts and artiectures involved just
-simple end, and you are completely on your own to reverse engineer thousands
-of line of code, hundreds of messages, dozens of files, multiple libraries,
-and, once again, underlying it all, a completely opaque set of proprietary
-protocols.
+- on telnet because it only goes to the serial port at this time.
+- because I am using actisense forwarding and
+- relying on the App to send the Info Request
 
 
-
-## Actisense Reader Two
-
-I spent most of yesterday fruitlessly trying to understand and use the NMEA2000 library
-ActisenseReader object.  Writing my own code to see if I was getting any bytes.  Struggling
-with the tiny ST7789 display as my only debugging output when the USB Serial is in "ACTISENSE"
-mode (its a binary, proprietary protocol - pretty simple wrapper, but no docs anywhere).
-
-I ended up adding **WiFi** and **Telnet** to my ESP32 apps so that I could have an alternative
-Serial port for debugging.  I *could* have used Serial2 on the ESP32 and a SerialUSB converter
-module, but I really don't want more wires and USB cables to my laptop.
-
-The story goes like this.
-
-- The Actinsense App shows the temperature.
-- Apparently when you "Open" the nmea2000 object, it sends out an "address claim" message
-- The address claim message includes the values from your setup() SetDeviceInformation() call.
-- Then the ActisenseApp shows it as a Device with that stuff.
-- But the App does not, by default show any Product Information or Configuration Information
-
-*Insert Hours of trying to figure out NMEA2000 modes, ForwardOwnMessages(), etc, etc, etc, etc, etc, etc*
-as I added Product Information, Configuration Information, Instances, and so on to both programs.
-
-Note once again that the "address claim" is only sent out by the library **once right after nmea2000,Open()**,
-and that it **never automaticaly sends the Product or Configuration information**,
-
-**IMPORTANT** - I typically use iDev=0 parameter in the setup call SetProductInformation() so that
-subsequently, upon startup, or if queried, I can call SendProductInformation() with its default *idx=0"
-to send it to the network.
+I *could* turn off actisense but then there would be no-one to
+send the request.  So I am back in the lion's jaws.
 
 
-It looks like when the App **recieves** an address claim it then **requests** product information.
-However I have not at all been able to figure out how to get the NMEA2000 library ActisenseReader object
-to work and/or hook it up to the nmea2000 object so that it responds to those requests.  There are
-implications in Library docs and comments that it should work, but no concrete descriptions, and
-it did not work out of the box.
+### Timing Issues - Telnet
 
-Finally, after sorting out the 17 different signatures for "SendProductInformation" I figured out
-how it works (sort of).  And the same for SendConfigurationInformation, SendTxPGNList, and SendRxPGNList.
+I *may* hook up a USBSerial Adapter to the ESP32's Serial2 port
+because I am sure that using the ST7789 display and/or Telnet
+introduce timing delays which prevent the system from working
+correctly.
 
-**I now send those out when I boot**.  BTW, It's better to not use the multi-packet boolean parameter
-in any of these calls, as the App seems to miss them occasionally, so I send em as one big packet each.
+However, with existing Telnet I can *at least* see that I am
+receiving the GetProductInfo request, although, at this time
+I cannot see if it is "on the bus".
 
-
-The library seems to imply that it manages several devices, but I have yet to figure out how
-that works.
+Another option might be to use UDP rather than TCP/IP packets,
+but then I need to write UDP Perl app?
 
 
 
-## Status
-
-- I am getting the correct Device, Product and Configuration information in the App
-- My programs (the Monitor) is not responding to the Apps requests, specifically for Product Information
-- The App asks once per second for an undocumented PGN "Get Operting Mode"
-- I can see the bytes coming from the App to the monitor over USB
-- I don't know what to do next
-- I'm not sure if the monitor should be agregating devices or not
+## tN2kDeviceList
 
 
-Here's some example setup() calls:
+(It's not a typedef - its a class wouild have been better as n2kDeviceList or even just N2DeviceList)
 
-``` c++
-nmea2000.SetProductInformation(
-    "prh_model_100",            // Manufacturer's Model serial code
-    100,                        // Manufacturer's uint8_t product code
-    "ESP32 NMEA Monitor",       // Manufacturer's Model ID
-    "prh_sw_1.0",               // Manufacturer's Software version code
-    "prh_mv_1.0",               // Manufacturer's uint8_t Model version
-    3,                          // LoadEquivalency uint8_t 3=150ma; Default=1. x * 50 mA
-    2101,                       // N2kVersion Default=2101
-    1,                          // CertificationLevel Default=1
-    0                           // iDev (int) index of the device on \ref Devices
-    );
-nmea2000.SetConfigurationInformation(
-    "prhSystems",           // ManufacturerInformation
-    "MonitorInstall1",      // InstallationDescription1
-    "MonitorInstall2"       // InstallationDescription2
-    );
-nmea2000.SetDeviceInformation(
-    1230100, // uint32_t Unique number. Use e.g. Serial number.
-    130,     // uint8_t  Device function=Analog to NMEA 2000 Gateway. See codes on https://web.archive.org/web/20190531120557/https://www.nmea.org/Assets/20120726%20nmea%202000%20class%20&%20function%20codes%20v%202.00.pdf
-    25,      // uint8_t  Device class=Inter/Intranetwork Device. See codes on https://web.archive.org/web/20190531120557/https://www.nmea.org/Assets/20120726%20nmea%202000%20class%20&%20function%20codes%20v%202.00.pdf
-    2046     // uint16_t choosen free from code list on https://web.archive.org/web/20190529161431/http://www.nmea.org/Assets/20121020%20nmea%202000%20registration%20list.pdf
-    );
+Do I need it?
+
+
+
+## What do I do next
+
+Do I:
+
+- start playing with the DeviceList object?
+- modify my program to have serial command input to send the request to the NMEA_Sensor?
+- tee or otherwise get the NMEA bus to showup on telnet somehow?
+- implement a 2nd debugging serial monitor to solve the previous two?
+- keep looking at code trying to figure out what the author was thinking
+  and how it is *supposed* to work.
+
+My strongest idea is to tend towards a Serial2 debugging monitor
+and by first implementing a Serial command processor to try to
+query the existing NMEA_Sensor for its product information, then
+to code-up and wire-up a USB Serial board and see what happens.
+
+### Serial command processor
+
+q = query product information PGN_REQUEST(59904,126996)
+
+First attempt: no joy. Perhaps thats because the temperature sensor is not listening
+Nope. It is set to N2km_ListenAndNode.
+
+Do I need to specify it's destination (22) specifically?
+Am I using the wrong device index in building th emessage?
+
+
+Grrr ... need to try DEBUG_RXANY in the sensor ...
+
+AFTER WHICH the sensor received a 126993 heartbeat from the monitor
+
+
+### NMEA_Sensor got, and responded to PGN_REQUEST(59904,126996)!!
+
+I had to set DEBUG_RXANY.
+
+Sadly, and/or strangely, I had initially made a typo in my code
+and the compiler accepted it:
+
+```
+    nmea2000.SendMsg(PGN_PRODUCT_INFO, 0);
+    // should have been
+    nmea2000.SendMsg(msg, 0);
 ```
 
+I guess there is a signature for SendMsg that takes two integers.
 
-## Network Device Enumeration (PGNS) General
+### Now implement Serial2 debugging
 
-- **PGN(60928) - Address Claim** - when a device starts up, as per the standard, it **must**
-  broadcast a PGN(60928) Address Claim message.  If no other device replies (within 250 ms?)
-  then it can assume, at least temporarily, that it "owns" the address it has claimed.
-  If other devices reply, arbitration will likely need to take place (based on some
-  *priority* scheme) to resolve the address conflict.  The PGN(60928) sends out the data
-  that you provide in your setup() SetDeviceInformation() call.
-- **PGN(126993) - Heartbeat** - the Library appears to send out a regular and repeating PGN(126992)
-  Hearbeat message.  This notifies eveyone on the network of their continued presence,
-  and *could* be used by a device that wishes to enumerate all devices to subsequently
-  do requests to obtain more information about specific devices. Strangly the App doesn't do that.
-- **PGN(126996) - Product Information** - This message is sent by a device to broadcast
-  its Product Information.
-- **PGN(126998) - Device Configuration** - This message is sent by a device to broadcast
-  its Device Configuration Information.
-- **PGN(126996) - PGN Request - This message is sent to ask devices to respond with a particular
-  PGN.
+and turn of the ST7789, WIFI, and Telnet. to further explore what
+I get, and what I should do with it, when TO_ACTISENSE=1
+
+I *could* implement a teensy program instead of using the FDTI module.
 
 
-Other interesting PGNS include
-
-- 126992 - System Time
 
 
-In reaponse to a Address Claim, The App sends out REQUEST_PGN(59904==0xea00) for
-PGN(60928) Address Claim (even though the AI I talked to said this is a bad practice).
-
-Weird.
-
-### Dispatching from NMEA_Monitor
-
-After now successfully parsing actisense requests, and getting the REQUEST_PGN(Address Claim),
-how should the Monitor go about dispatching it.
-
-Clearly it depends on the destination and source.  Lets add those to the debugging.
 
 
-### FIRST COMPLETE ACTISENSE REPLY!!!
 
-See AI_CONVERSATION.docx for a long conversation I had with an AI about
-how the NMEA2000 protocol should work with regards to device enumeration.
 
-I finally got the App's log window show a "Complete" status to one of its
-actisense messages being sent via the serial port to the NMEA_Monitor.
-NMEA_Monitor listens for PGN_REQUEST(Address Claim) and calls nmea2000.SendIsoAddressClaim()
-in response.  Timing is an issue as when I was running a Telnet session
-to the NMEA_Monitor the response would *bypass* the log window (resulting in
-a timeout) although it would still show up in the App's DataView window.

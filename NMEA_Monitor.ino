@@ -21,25 +21,20 @@
 
 void setup()
 {
-	#if WITH_SERIAL2
-		Serial2.begin(921600);
-		delay(1000);
-		dbgSerial = &Serial2;
+	#ifdef DEBUG_PORT
+		DEBUG_PORT.begin(921600);
+		dbgSerial = &DEBUG_PORT;
 	#endif
 
-	#if FAKE_ACTISENSE || TO_ACTISENSE
-		// turn off primary port in myDebug.h
-		// so no debugging goes to the serial port
-		// and initialize at 115200
-		#if !WITH_SERIAL2
-			dbgSerial = 0;
-		#endif
-		Serial.begin(115200);
-	#else
-		Serial.begin(921600);
-		delay(2000);
-		Serial.println("WTF");
+	#ifdef ACTISENSE_PORT
+		ACTISENSE_PORT.begin(115200);
 	#endif
+
+	#ifdef DEBUG_PORT
+		delay(2000);
+		dbgSerial->println("WTF");
+	#endif
+
 
 	display(dbg_mon,"NMEA_Monitor.ino setup() started",0);
 	proc_entry();
@@ -119,30 +114,60 @@ void setup()
 
 			if (byte == 'q')
 			{
-				display(0,"Sending PGN_PRODUCT_INFO request",0);
+				display(0,"Sending PGN_REQUEST(PGN_PRODUCT_INFO) message",0);
 				tN2kMsg msg;
-
-				// This is a global method, NOT a member method
-				// but is only inches from the messy public API.
-				// I know ... they prefer automatic documentation generators ... I don't.
-				// I prefer easy to read H files.
-				
 				SetN2kPGN59904(msg, 255, PGN_PRODUCT_INFO);
-					// 2nd param is "dest". I thought 255 meant "broadcast"
-					// dest(255) did not work until I fixed my code and added DEBUG_RXANY=1 to Sensor
-					// dest(22) thereafter worked as expected
-
 				nmea2000.SendMsg(msg, 0);
-					// the 2nd parameter is the "idx" and should be 0, I think, as we are sending
-					// 		from THIS nmea2000 (NMEA_Monitor)
-					// I initially had a bad parameter (PGN_PRODUCT_INFO) but it compiled
-					//		and did not work.
-					// After changing it to correct "msg" and using DEBUG_RXANY=1 to the sensor
-					//		it worked!
-					// The message shows up both in my sent debugging output,
-					// 		the sensors debugging output, and both see the reply
-					//		as well.
+					// 0 == idx of THIS device by my setup()
 			}
+			else if (byte == 'i')
+			{
+				display(0,"calling SendProductInformation()",0);
+				nmea2000.SendProductInformation();
+
+				// experimental
+				// try to add self to device_list
+				// via PGN_PRODUCT_INFO ... maybe need address claim first  
+
+				#if WITH_DEVICE_LIST
+					if (device_list)
+					{
+						tN2kMsg msg;
+
+						#define MAXBUF 32
+						char model_id[MAXBUF+1];
+						char sw_code[MAXBUF+1];
+						char model_version[MAXBUF+1];
+						char model_serial[MAXBUF+1];
+
+						nmea2000.GetModelID(model_id, MAXBUF);
+						nmea2000.GetSwCode(sw_code,  MAXBUF);
+						nmea2000.GetModelVersion(model_version,  MAXBUF);
+						nmea2000.GetModelSerialCode(model_serial,  MAXBUF);
+
+						SetN2kPGN126996(msg,
+							nmea2000.GetN2kVersion(),
+							nmea2000.GetProductCode(),
+							model_id,
+							sw_code,
+							model_version,
+							model_serial,
+							nmea2000.GetCertificationLevel(),
+							nmea2000.GetLoadEquivalency() );
+
+						msg.Source = MONITOR_NMEA_ADDRESS;
+
+						device_list->HandleMsg(msg);
+					}
+				#endif
+			}
+			#if WITH_DEVICE_LIST
+				else if (byte == 'l')
+				{
+					display(0,"calling listDevices(true)",0);
+					listDevices(true);
+				}
+			#endif
 			else
 			{
 				warning(0,"unhandled serial char(0x%02x)='%c'",byte,byte>=32?byte:' ');
@@ -174,7 +199,6 @@ void loop()
 		broadcastNMEA2000Info();
 	#endif
 
-
 	nmea2000.ParseMessages();
 
 	#if WITH_SERIAL_COMMANDS
@@ -185,6 +209,10 @@ void loop()
 		doFakeActisense();
 	#elif TO_ACTISENSE
 		actisenseReader.ParseMessages();
+	#endif
+
+	#if WITH_DEVICE_LIST
+		listDevices(false);
 	#endif
 
 }	// loop()

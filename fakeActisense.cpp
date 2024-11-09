@@ -195,9 +195,9 @@
 		// and in between there may be 0x10 0x10 for an escaped 0x10
 
 		static int serial_count = 0;
-		if (Serial.available())
+		if (ACTISENSE_PORT.available())
 		{
-			uint8_t byte = Serial.read();
+			uint8_t byte = ACTISENSE_PORT.read();
 			serial_count++;
 
 			#if DEBUG_ACTIVE

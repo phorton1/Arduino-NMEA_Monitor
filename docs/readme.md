@@ -444,7 +444,7 @@ these into the CANBUS receive queue which is, probably for
 very good reasons, hardwired to actual CANBUS messages.
 
 
-### Next Steps 237
+## Next Steps 237
 
 There are a couple of things that I still need to mess with.
 
@@ -457,5 +457,65 @@ There are a couple of things that I still need to mess with.
 Fortunately, there do not seem to be any stray calls
 to Serial.print() etc in the NMEA2000 library, so I
 think (a) will work.
+
+
+### Move actisense stream to Serial2
+
+After this little code cleanup, I like it better.
+Cleaner and NEMA_Simulator starts up and gets all nice devices.
+
+- OpenSkipper still does not do any requests to get its device list setup on startup.
+- OpenSkipper shows non-printable characters in Product Info and Install information.
+- NMEAReader App always did no request for device list, but still only does a
+  PGN_REQUEST(PGN_ADDRESS_CLAIM) IF I reboot something.
+
+In any program I can explicitly send Product, and Configuration information to it
+from the Serial Commands 'q' and 'i' in the Monitor, but I still don't feel its
+absolutely correct.
+
+### DeviceList
+
+I think the method PrintLabelValWithConversionCheckUnDef() implemented
+in the DeviceAnalyzer.ino example is a vestigial cut-and-paste hangover
+by Timo and is never called in the example.
+
+After getting it working, of course it does not list itself as a device.
+Has a side effect that if you reboot the Monitor, since it's going
+to enumerate the Sensor, if you are running NMEAReader or OpenSkipper,
+the SENSOR will show up with all of its info, lol, not the Monitor.
+
+I suppose I could derive from the class and add myself.
+I find it odd that the example, which defines a device,
+does not list itself and no-one else found that unusual.
+
+I tried an experiment and called device_list.handleMsg()
+with a PGN_PRODUCT_INFO message I built by hand and it
+added it to the device list.
+
+At this point I am wondering if there's a way for me to
+slip stuff into CANBUS receive stream for my own device.
+In other words is there some way I can just take the
+actisense messages for me and get the system to respond
+to them, and simply tell myself to send product information,
+via a PGN_REQUEST() so that I don't have to build the
+message or make explicit calls like these myself.
+
+That will almost assuredly require a derived class.
+
+Otherwise, even with the kludge that I have to press
+a button, I would need to add all the system messages
+(address claim, product info, config info, device info)
+to get it to show correctly in the list.
+
+Thus far I am not totally enamored with the whole device
+enumeration thing in any of these programs. Only NEMA_Simulator
+currently gets things setup without any further intervention
+on my part, and that was only after I hand coded responding
+to actisense system messages on the Monitor (THIS) device.
+
+In any case, I don't see the deviceList as providing me
+with any great benefit, but might want to use it for the
+oled UI of this NMEA_Monitor if I ever get as far as to
+implement something for reasonable use on the tiny screen.
 
 

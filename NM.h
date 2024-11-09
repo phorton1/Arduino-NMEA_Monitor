@@ -14,16 +14,17 @@
 // #include <SPI.h>
 
 
+#define MONITOR_NMEA_ADDRESS	99
+
+
 #define CAN_CS_PIN		5
 #define USE_HSPI		1
 	// use ESP32 alternative HSPI for mcp2515 so that it
 	// isn't mucked with by the st7789 display
 
-#define WITH_SERIAL2	1
-	// Use Serial2 port for dbgSerial
-#define WITH_OLED		0
-	// Use the OLED (ST7789) on an Ideaspark ESP32 for
-	// slow tiny additional output
+// WIFI is only used to drive TELNET, which is only assigned
+// to myDebug::extraSerial when telnet is connected.
+
 #define WITH_WIFI		0
 	// Needed for WITH_TELNET, connect to
 	// Wifi network using my private credentials
@@ -33,31 +34,103 @@
 	// upon connection and null upon disconnection
 
 
+// The OLED display as a monitor is not very useful,
+// plus it's backwards, in a sense, where it would be, perhaps
+// better to think of it as an alternative myDebug stream.
+// Otherwise, paritcularly if I went to the SSD1306,
+// the oled is probably a "special" display for limited
+// information (i.e. heading/speed/depth/temperature)
+// or maybe a brief device list, or generator details when
+// I learn them, but it's not very useful as a scrolling
+// output device.
+
+#define WITH_OLED		0
+	// Use the OLED (ST7789) on an Ideaspark ESP32 for
+	// slow tiny additional output
+
+
+// The DeviceList is less than completely useful.
+// Maybe nice on the oled in a semi-finished deployment.
+
+#define WITH_DEVICE_LIST	0
+	// make this device also keep a list of  devices
+
+
+// kludges
+
 #define WITH_SERIAL_COMMANDS	1
-	// implements a serial command processor
-	// on dbgSerial if it's not 0
-
-
-#define PASS_THRU_TO_SERIAL		1
-	// Required for Actisense, but also perhaps handy
-	// if not to see "Text" representation of NMEA2000 bus
-
-// Only ONE of the next two should be defined.
-// and really only if PASS_THRU_TO_SERIAL is set
-
-#define FAKE_ACTISENSE			0
-	// use fake actisense methods for debugging
-#define TO_ACTISENSE			1
-	// use real tActisenseReader object
-	// In last two cases we set the USB Serial port to 115200 for
-	// output to the ActisenseReader application and handle
-	// input from USB Serial in one of these two ways
-
+	// WITH_SERIAL_COMMANDS is a kludge that currently
+	// q = put PGN_REQUEST(59904, PGN_PRODUCT_INFO) on the bus
+	// i = call sendProductInfo() to put our product info on the bus
 
 #define BROADCAST_NMEA200_INFO	0
-	// Kludge to call SendProductInfo, SendConfigInfo, and
-	// so on at program startup (at top of loop))?
+	// BROADCAST_NMEA200_INFO is a kludge to call SendProductInfo(),
+	// SendConfigInfo, and so on at program startup, at top of loop(),
+	// to make sure that other devices get it even if they are not
+	// requesting it.
 
+// Getting those out of the way, the main defines of interest
+// revolve around ACTISENSE, ProductInformation, and debugging.
+//
+// With this next mod I am going to change it so that TO_ACTISENSE
+// is synonymous with WITH_SERIAL2 and that the actisense port
+// is that SERIAL2 at 115200, and that I basically never change
+// the USB Serial port as the debugger/programmer, although the
+// option of showing the NMEA2000 stream by forwarding to it
+// remains.
+
+
+
+#define ACTISENSE_PORT	Serial2
+#define DEBUG_PORT		Serial
+	// if these are defined, they will be opened at 115200,
+	// and 921600 respectively.
+
+#define TO_ACTISENSE    	1
+#define FAKE_ACTISENSE    	0
+	// only one of the above should be defined as 1
+	// compile will break if they are defined an ACTISENSE_PORT is not
+
+#define SHOW_BUS_TO_SERIAL	1
+	// if neither TO_ACTISENSE or FAKE_ACTISENSE are set,
+	// but this is, then the nmea2000 stream will be forwarded
+	// to the DEBUG_PORT in text mode.
+
+
+// OLD:
+//
+//	#define WITH_SERIAL2	1
+//		// Use Serial2 port for dbgSerial
+//	#define PASS_THRU_TO_SERIAL		1
+//		// Required for Actisense, but also perhaps handy
+//		// if not to see "Text" representation of NMEA2000 bus
+//
+//	// Only ONE of the next two should be defined.
+//	// and really only if PASS_THRU_TO_SERIAL is set
+//
+//	#define FAKE_ACTISENSE			0
+//		// use fake actisense methods for debugging
+//	#define TO_ACTISENSE			1
+//		// use real tActisenseReader object
+//		// In last two cases we set the USB Serial port to 115200 for
+//		// output to the ActisenseReader application and handle
+//		// input from USB Serial in one of these two ways
+
+
+
+
+
+//----------------------------------
+// end of conditional defines
+//----------------------------------
+// start of actual "stuff"
+
+#if WITH_DEVICE_LIST
+	#include <N2kDeviceList.h>
+	extern tN2kDeviceList *device_list;
+	extern void listDevices(bool force = false);
+		// in nmDeviceList.cpp
+#endif
 
 
 #if WITH_OLED
@@ -72,12 +145,10 @@
 	#define LED_WIFI		2	// onboard led
 	#if WITH_TELNET
 		#include <ESPTelnetStream.h>
-
-		// in nmTelnet.cpp
-
 		extern ESPTelnetStream telnet;
 		extern bool telnet_connected;
 		extern void init_telnet();
+			// in nmTelnet.cpp
 	#endif
 #endif
 
@@ -121,19 +192,4 @@ extern void broadcastNMEA2000Info();
 #endif
 
 
-//-----------------------------------------------
-// constants for debugging onNMEA2000Message()
-//-----------------------------------------------
-
-#define TEMP_ERROR_CHECK	1
-	// 1 = compare subsequent temperatures and report errors
-
-#define DISPLAY_DETAILS		1
-	// 0 = off
-	// 1 = show just temperatures and PGNs
-	// 2 = shot detailed meessage header, temperature details, and PGNs
-
-#define OLED_DETAILS		1
-	// 0 = show only PGNs on st7789
-	// 1 = show Temps and PGNS on OLED
 	

@@ -8,8 +8,6 @@
 #include <N2kMessages.h>
 #include <N2kMessagesEnumToStr.h>
 
-#define MONITOR_NMEA_ADDRESS	99
-
 
 #if USE_HSPI
 	SPIClass *hspi;
@@ -55,7 +53,7 @@ void nmea2000_setup()
 	display(dbg_mon,"nmea2000_setup() started",0);
 	proc_leave();
 
-	#if 0
+	#if 1	// though I've never needed this, turned on for DeviceList
 		nmea2000.SetN2kCANSendFrameBufSize(150);
 		nmea2000.SetN2kCANReceiveFrameBufSize(150);
 	#endif
@@ -110,27 +108,27 @@ void nmea2000_setup()
 		// N2km_ListenOnly
 		// N2km_SendOnly
 
-	#if PASS_THRU_TO_SERIAL
 
-		nmea2000.SetForwardStream(&Serial);
-
-		#if TO_ACTISENSE || FAKE_ACTISENSE
-			nmea2000.SetForwardType(tNMEA2000::fwdt_Actisense);
-		#else
-			nmea2000.SetForwardType(tNMEA2000::fwdt_Text); 	// Show bus data in clear text
-		#endif
-
-		nmea2000.SetForwardOwnMessages(true);	// !TO_ACTISENSE);
-			// read/write streams are the same, so dont forward own messages?
-
+	#if TO_ACTISENSE || FAKE_ACTISENSE
+		nmea2000.SetForwardStream(&ACTISENSE_PORT);
+		nmea2000.SetForwardType(tNMEA2000::fwdt_Actisense);
+		nmea2000.SetForwardOwnMessages(true);
+	#elif SHOW_BUS_TO_SERIAL
+		nmea2000.SetForwardType(tNMEA2000::fwdt_Text); 	// Show bus data in clear text
+		nmea2000.SetForwardStream(dbgSerial);
+		nmea2000.SetForwardOwnMessages(true);
 	#else
 		nmea2000.EnableForward(false);
 	#endif
 
+	// Note about SetForwardOwnMessages.  Not clear about this example comment:
+	// "read/write streams are the same, so dont forward own messages", so
+	// I keep playing with true/false in both forwards
 
 	// nmea2000.SetDebugMode(tNMEA2000::dm_ClearText);
+	//	  I don't think I want this. It is a way to fake out SendMsg()
 
-	#if 1
+	#if 0	// note that AllMessages is empty at this time
 		// I could not get this to eliminate need for DEBUG_RXANY
 		// compiile flag in the Monitor
 
@@ -149,14 +147,18 @@ void nmea2000_setup()
 		nmea2000.SetSPI(hspi);
 	#endif
 
+	#if WITH_DEVICE_LIST
+		  device_list = new tN2kDeviceList(&nmea2000);
+	#endif
+
 	bool ok = nmea2000.Open();
 	if (!ok)
 		my_error("nmea2000.Open() failed",0);
 
-
 	#if TO_ACTISENSE
-		actisenseReader.SetReadStream(&Serial);
+		actisenseReader.SetReadStream(&ACTISENSE_PORT);
 		actisenseReader.SetDefaultSource(75);
+			// ok, so we introduce a new device address here sheesh
 		actisenseReader.SetMsgHandler(handleActisenseMsg);
 	#endif
 
@@ -319,34 +321,18 @@ void nmea2000_setup()
 //---------------------------------
 // onNMEA2000Message
 //---------------------------------
-// grrrr - sometimes we get invalid messages
-// i.e. PGN==0, or that parse but contain invalid results
+// Handles sensor messages and can show others from the bus
 // i.e. PGN=130316 temperatureC = -100000000000 ?!?!?!
 
 void onNMEA2000Message(const tN2kMsg &msg)
 {
+	bool msg_handled = false;
 	static uint32_t msg_counter = 0;
 	msg_counter++;
 
-	if (dbgSerial)
-		msg.Print(dbgSerial);
-
-	#if DISPLAY_DETAILS == 2
-		display(dbg_mon,"onNMEA2000 message(%d) priority(%d) source(%d) dest(%d) len(%d)",
-			msg.PGN,
-			msg.Priority,
-			msg.Source,
-			msg.Destination,
-			msg.DataLen);
-		// also timestamp (ms since start [max 49days]) of the NMEA2000 message
-		// unsigned long MsgTime;
-	#endif
-
-	// new heading,speed,depth sensor not shown on oled
-	// and no error checking is done
-
-	#if DISPLAY_DETAILS == 1
-
+	if (msg.Destination == 255 ||
+		msg.Destination == MONITOR_NMEA_ADDRESS)
+	{
 		uint8_t sid;
 		double d1,d2,d3;
 
@@ -355,113 +341,61 @@ void onNMEA2000Message(const tN2kMsg &msg)
 			// heading is in radians
 			tN2kHeadingReference ref;
 			if (ParseN2kPGN127250(msg, sid, d1,d2,d3, ref))
+			{
+				msg_handled = true;
 				display(dbg_mon,"heading(%d) : %0.3f degrees",msg_counter,RadToDeg(d1));
+			}
 			else
-				my_error("Parsing PGN128267",0);
+				my_error("Parsing PGN_HEADING(128267)",0);
 		}
 		else if (msg.PGN == PGN_SPEED)
 		{
 			// speed is in meters/second
 			tN2kSpeedWaterReferenceType SWRT;
 			if (ParseN2kPGN128259(msg, sid, d1, d2, SWRT))
+			{
+				msg_handled = true;
 				display(dbg_mon,"speed(%d) : %0.3f kts",msg_counter,msToKnots(d1));
+			}
 			else
-				my_error("Parsing PGN128267",0);
+				my_error("Parsing PGN_SPEED(128267)",0);
 		}
 		else if (msg.PGN == PGN_DEPTH)
 		{
 			// depth is in meters
 			if (ParseN2kPGN128267(msg,sid,d1,d2,d3))
-				display(dbg_mon,"depth(%d) : %0.3f meters",msg_counter,d1);
-			else
-				my_error("Parsing PGN128267",0);
-		}
-
-		else
-	#endif
-
-	if (msg.PGN == PGN_TEMPERATURE)
-	{
-		uint8_t sid;
-		uint8_t instance;
-		tN2kTempSource source;
-		double temperature1;
-		double temperature2;
-
-		bool rslt = ParseN2kPGN130316(
-			msg,
-			sid,
-			instance,
-			source,
-			temperature1,
-			temperature2);
-
-		if (rslt)
-		{
-			#if TEMP_ERROR_CHECK 	// check for missing values
-				static bool check_started = 0;
-				static int last_temp = 0;
-				int temp = temperature1;
-
-				if (check_started &&
-					last_temp != temp+1 &&
-					last_temp != temp-1)
-				{
-					my_error("BAD_TEMP(%d) %d != %d",msg_counter,last_temp,temp);
-				}
-
-				last_temp = temp;
-				check_started = true;
-			#endif
-
-
-			float temperature = KelvinToC(temperature1);
-				// temperature2 == N2kDoubleNA
-
-			#if DISPLAY_DETAILS == 2
-				display(dbg_mon,"%s(%d) inst(%d) : %0.3fC",
-					N2kEnumTypeToStr(source),
-					msg_counter,
-					instance,
-					temperature);
-			#elif DISPLAY_DETAILS == 1
-				display(dbg_mon,"temp(%d) : %0.3fC",msg_counter,temperature);
-			#endif
-
-			if (!temperature1 || (temperature1 == N2kDoubleNA))
 			{
-				my_error("BAD_TEMP(%d) %0.3f",msg_counter,temperature1);
-				return;
+				msg_handled = true;
+				display(dbg_mon,"depth(%d) : %0.3f meters",msg_counter,d1);
 			}
-
-			#if WITH_OLED && OLED_DETAILS
-				mon.println("temp(%d) %0.3fC",msg_counter,temperature);
-			#endif
+			else
+				my_error("Parsing PGN_DEPTH(128267)",0);
 		}
-		else
-			my_error("PARSE_PGN(%d)",msg_counter);
-	}
-	else
+		else if (msg.PGN == PGN_TEMPERATURE)
+		{
+			// temperature is in kelvin
+			uint8_t instance;
+			tN2kTempSource source;
+
+			if (ParseN2kPGN130316(msg,sid,instance,source,d1,d2))
+			{
+				msg_handled = true;
+				display(dbg_mon,"temp(%d) : %0.3fC",msg_counter,KelvinToC(d1));
+			}
+			else
+				my_error("Parsing PGN_TEMPERATURE(130316)",0);
+		}
+	}	// 255 or MONITOR_NMEA_ADDRESS
+
+
+	// show unhandled messages as BUS: in white
+
+	if (dbgSerial && !msg_handled)
 	{
-		// known invalid valid messages
-
-		if (msg.PGN == 0 || (
-			msg.PGN != 60928L &&
-			msg.PGN != 126993L))
-		{
-			my_error("BAD PGN(%d)=%d",msg_counter,msg.PGN);
-		}
-		else
-		{
-			#if DISPLAY_DETAILS == 1
-				display(dbg_mon,"PGN(%d)=%d",msg_counter,msg.PGN);
-			#endif
-
-			#if WITH_OLED
-				mon.println("PGN(%d)=%d",msg_counter,msg.PGN);
-			#endif
-		}
+		dbgSerial->print("BUS: ");
+		msg.Print(dbgSerial);
 	}
+
 }
 
 

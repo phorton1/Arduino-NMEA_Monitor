@@ -27,7 +27,7 @@ void setup()
 		dbgSerial = &Serial2;
 	#endif
 
-	#if TO_ACTISENSE
+	#if FAKE_ACTISENSE || TO_ACTISENSE
 		// turn off primary port in myDebug.h
 		// so no debugging goes to the serial port
 		// and initialize at 115200
@@ -110,6 +110,9 @@ void setup()
 
 	static void handleSerialCommands()
 	{
+		if (!dbgSerial)
+			return;
+		
 		if (dbgSerial->available())
 		{
 			uint8_t byte = dbgSerial->read();
@@ -176,7 +179,9 @@ void loop()
 
 	#if WITH_SERIAL_COMMANDS
 		handleSerialCommands();
-	#elif FAKE_ACTISENSE
+	#endif
+
+	#if FAKE_ACTISENSE
 		doFakeActisense();
 	#elif TO_ACTISENSE
 		actisenseReader.ParseMessages();

@@ -607,6 +607,7 @@ nmea2000.SetDeviceInformation(
   its Product Information.  It does not happen automatically.
 - **PGN(126998) - Device Configuration** - This message is sent by a device to broadcast
   its Device Configuration Information. It does not happen automatically.
+- **PGN(126464) - Transmit List - one message for each type of list
 - **PGN_REQUEST(59904,xxx)*** - PGN Request - This message is sent to ask devices to respond with a particular
   PGN(xxx).  You may need to learn about this to get anything nice to show in the Actisense Reader app.
 

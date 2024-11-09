@@ -19,17 +19,33 @@
 	// use ESP32 alternative HSPI for mcp2515 so that it
 	// isn't mucked with by the st7789 display
 
+#define WITH_SERIAL2	1
+	// Use Serial2 port for dbgSerial
+#define WITH_OLED		0
+	// Use the OLED (ST7789) on an Ideaspark ESP32 for
+	// slow tiny additional output
+#define WITH_WIFI		0
+	// Needed for WITH_TELNET, connect to
+	// Wifi network using my private credentials
+#define WITH_TELNET		0
+	// Instantiate telnet object and
+	// Set myDebug's extraSerial output to telnet
+	// upon connection and null upon disconnection
+
+
+#define WITH_SERIAL_COMMANDS	1
+	// implements a serial command processor
+	// on dbgSerial if it's not 0
+
 
 #define PASS_THRU_TO_SERIAL		1
 	// Required for Actisense, but also perhaps handy
 	// if not to see "Text" representation of NMEA2000 bus
 
+// Only ONE of the next two should be defined.
+// and really only if PASS_THRU_TO_SERIAL is set
 
-// Only ONE of the next three should be defined.
-
-#define WITH_SERIAL_COMMANDS	0
-	// implements a serial command processor
-#define FAKE_ACTICSENSE			0
+#define FAKE_ACTISENSE			0
 	// use fake actisense methods for debugging
 #define TO_ACTISENSE			1
 	// use real tActisenseReader object
@@ -37,22 +53,11 @@
 	// output to the ActisenseReader application and handle
 	// input from USB Serial in one of these two ways
 
+
 #define BROADCAST_NMEA200_INFO	0
-	// Will we call SendProductInfo, SendConfigInfo, and
+	// Kludge to call SendProductInfo, SendConfigInfo, and
 	// so on at program startup (at top of loop))?
 
-#define WITH_SERIAL2	0
-	// Use Serial2 port at 115200
-#define WITH_OLED		1
-	// Use the OLED (ST7789) on an Ideaspark ESP32 for
-	// slow tiny additional output
-#define WITH_WIFI		1
-	// Needed for WITH_TELNET, connect to
-	// Wifi network using my private credentials
-#define WITH_TELNET		1
-	// Instantiate telnet object and
-	// Set myDebug's extraSerial output to telnet
-	// upon connection and null upon disconnection
 
 
 #if WITH_OLED
@@ -88,6 +93,9 @@
 #define PGN_PRODUCT_INFO			126996L
 #define PGN_DEVICE_CONFIG			126998L
 #define PGN_TEMPERATURE    			130316L
+#define PGN_HEADING					127250L
+#define PGN_SPEED					128259L
+#define PGN_DEPTH					128267L
 
 // in NM.cpp
 
@@ -96,7 +104,10 @@ extern const unsigned long AllMessages[];
 
 extern void nmea2000_setup();
 extern void onNMEA2000Message(const tN2kMsg &msg);
+
 extern void broadcastNMEA2000Info();
+	// in factActisense.cpp
+
 
 #if TO_ACTISENSE
 	#include <ActisenseReader.h>
@@ -105,6 +116,7 @@ extern void broadcastNMEA2000Info();
 #endif
 
 #if FAKE_ACTISENSE
+	// in factActisense.cpp
 	extern void doFakeActisense();
 #endif
 

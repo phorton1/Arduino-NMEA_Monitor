@@ -316,7 +316,146 @@ I *could* implement a teensy program instead of using the FDTI module.
 
 
 
+## GRRRRR Fragile (stupid) Actisense Reader Application
+
+Yesterday, I'm sure, that when I had TO_ACTISENSE defined, and
+the App was freshly started started, and it had heartbeats from
+both the NMEA_Monitor and the NMEA_Sensor program, that if I
+rebooted the NMEA_Sensor, causing it to send out an address claim,
+that upon receiving that address claim, the App would then turn
+around and request Product Information.
+
+Today the App no longer requests Product Information.
+
+Instead it requests Address Claims (something that the
+AI specifically told me is a non-NMEA2000 standard way
+of enumerating devices on the bus).
+
+So now I am totally eff'd, because the whole point of all
+of today's work was merely to figure out how to get the
+Monitor to properly reply to an Actisense GetProductInfo
+request, but the stupid app, for some reason I will probably
+never know, no longer sends one.
+
+I am about sick and tired of considering the Actisense Reader
+Application to be my reference standard for trying to figure
+this stuff out.
+
+Sheesh.
 
 
+In addition, since the monitor is putting it's own messages
+on the buss, the stupid Address Claim request gets echoed
+back to the App, when what I really wanted was for it to
+get forwarded to the Sensor so that BOTH the Sensor and
+Monitor would reply with the product information, and the
+App would "look nice" automagically.
+
+I am tempted to just use my BROADCAST_NMEA200_INFO define
+in both programs and move on.
+
+
+## Installed and ran NMEA-Simulator and OpenSkipper
+
+**NMEA-Simulator** is all about SENDING fake NMEA information.
+It has rudimentary listening capabilities, a good device list,
+and perhaps most importantly, ENUMERATES THE DEVICES ON THE NET
+in a way that makes sense to me (as opposed to ActisenseReader app).
+
+
+**OpenSkipper** seems to be a (good) general purpose UI for
+displaying NMEA information.
+It works with actisense protocol over a serial port.
+It has an interesting XML driven approach to displaying panels
+(modeless dialogs) in an old-school windows application, but
+as interesting, once I figured out to turn the "localhost only"
+checkbox off which then caused Win10 to ask me if I wanted to
+grant the app the ability to open a port on my machine, it
+HAS A WEBSERVER which, I hope, makes use of the same xml definitions
+as used by the native EXE file.
+
+This would be interesting, if I learn about it and continue to like it
+for my internet of things library myIOT.
+
+But in any case, I am having a hard time because the message I picked
+(130316 Environmental Temperatures) is not represented in the OpenSkipper
+default UI and I don't want to delve into how you build the UI with
+Visual Studio, and so I think I'm gonna change the sensor to transmit
+
+- **127250:Vessel Heading** - in **PGN** Explorer as identifier **Heading**
+  and the **Parameter** Explorer also as identifier **Heading**.
+- **128250:Speed** - specifically the 1st param, the Speed Over Water
+  which is represented in the OpenSkipper **PGN** Explorer as the *identifier*
+  **Speed Water Referenced** which gets turned into the OpenSkipper
+  **Parameter** explorer as **Boat_kts** via *hook[0]*
+- **128267:Water Depth** as PGN Explorer **Depth** (under keel) and
+  **Parameter** **Depth**
+
+By using these, instead of the 130316 temperature PGN, I *should*
+see the dials and values change in OpenSkipper.
+
+
+### Continuing
+
+I thought that the system would handle actisense requests to
+the Monitor if I merely wrote all messages to the bus.
+However, although the Sensor was talking to NMEA_Simulator
+well (regarding ISO requests for Product Info, TransmitPGN
+list, etc), nothing was coming from the Monitor.
+
+99 is the address of the Monitor.
+So I changed the Monitor's handleActisense() method to
+
+- put the message on the buss if dest==255 or dest!=99
+- explicitly respond to PGN requests if dest=255 or dest==99
+
+Now the Monitor appears as a "better" device in NMEA-Simulator,
+showing up automatically when I start it, with all Product
+PGN lists, and other information visible.
+
+However, although they show up in OpenSkipper, neither
+device has product information. Starting OpenSkipper causes
+the Monitor to reboot, prolly when it opens COM6, so it
+shows up in the device list. I have to reboot the Sensor
+for it to send an addtess claim and be noticed by OpenSkipper.
+
+After modifying the Sensor to broadcastNMEA2000Info()
+upon startup, the product info shows up in OpenSkipper,
+although the text fields appear padded with unprintable
+characters.
+
+I'm really not much closer to understanding how this whole
+system works.  I can get my head around the fact that
+I have to explicitly handle actisense messages, and I like
+the way the NMEA_Simluator automatically now shows "nice"
+devices, WITHOUT me having to handle requests explicitly
+in the Sensor.
+
+Next I think I revisit parseMessages() and see how perhaps
+I might *better* handle "self" actisense messages in the Monitor.
+
+
+### No Good Solution
+
+In the end, to get the Monitor to show up in any apps on
+the laptop, I currently have to explicitly respond to
+actisense messages to myself.  There is no way to "feed"
+these into the CANBUS receive queue which is, probably for
+very good reasons, hardwired to actual CANBUS messages.
+
+
+### Next Steps 237
+
+There are a couple of things that I still need to mess with.
+
+- (a) Move the actisense stream to Serial2 so that I can keep Serial
+  open as my own port.
+- (b) Try using interrupts on the mpc2515
+- (c) Mess around with the deviceList in prep for AGS devices
+  i.e. the generator.
+  
+Fortunately, there do not seem to be any stray calls
+to Serial.print() etc in the NMEA2000 library, so I
+think (a) will work.
 
 

@@ -8,9 +8,10 @@
 	#include <prhPrivate.h>
 #endif
 
-#if WITH_OLED
-	myOledMonitor mon(DRIVER_ST7789_320x170,1,WITH_OLED_TASK);
-		// we always want the smallest font(1) in this program
+#if WITH_OLED_MONITOR
+	#define WITH_OLED_TASK		1
+	#define OLED_FONT_SIZE		2
+	myOledMonitor mon(DRIVER_ST7789_320x170,OLED_FONT_SIZE,WITH_OLED_TASK);
 #endif
 
 
@@ -39,7 +40,7 @@ void setup()
 	display(dbg_mon,"NMEA_Monitor.ino setup() started",0);
 	proc_entry();
 	
-	#if WITH_OLED
+	#if WITH_OLED_MONITOR
 		mon.init(1);
 			// rotation = 1
 			// with_display = false;
@@ -71,7 +72,7 @@ void setup()
 			digitalWrite(LED_WIFI,1);
 			String ip = WiFi.localIP().toString();
 			display(dbg_mon,"Connecting to %s at %s",USE_SSID,ip.c_str());
-			#if WITH_OLED
+			#if WITH_OLED_MONITOR
 				mon.println("IP: %s",ip.c_str());
 			#endif
 
@@ -82,7 +83,7 @@ void setup()
 		else
 		{
 			my_error("Could not connect to %s",USE_SSID);
-			#if WITH_OLED
+			#if WITH_OLED_MONITOR
 				mon.println("WIFI ERROR!!!");
 			#endif
 		}
@@ -214,6 +215,6 @@ void loop()
 	#if WITH_DEVICE_LIST
 		listDevices(false);
 	#endif
-
+	
 }	// loop()
 

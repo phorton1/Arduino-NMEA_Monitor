@@ -19,14 +19,6 @@ public:
 	void msgToSelf(const tN2kMsg &msg, uint8_t self_addr);
 
 	bool CANGetFrame(unsigned long &id, unsigned char &len, unsigned char *buf) override;
-
-
-	//	const tInternalDevice *getInternalDevice(int idx=0) const
-	//	{
-	//		if (idx < DeviceCount)
-	//			return &Devices[idx];
-	//		return 0;
-	//	}
-
 		
 };	// class myNMEA2000_mcp
+

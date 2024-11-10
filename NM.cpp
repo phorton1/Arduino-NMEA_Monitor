@@ -27,7 +27,7 @@
 
 
 // I now believe that the monitor
-// (a) should not handle system message or advertise specifically that it does so
+// (a) should not directly handle system message or advertise specifically that it does so
 // (b) should not try to enumerate the messages it sends or receives from clients
 
 const unsigned long AllMessages[] = {
@@ -59,7 +59,7 @@ void nmea2000_setup()
 	display(dbg_mon,"nmea2000_setup() started",0);
 	proc_leave();
 
-	#if 0	// though I've never needed this, turned on for DeviceList
+	#if 0	// the program works well enough with the defaults of 50
 		nmea2000.SetN2kCANSendFrameBufSize(150);
 		nmea2000.SetN2kCANReceiveFrameBufSize(150);
 	#endif
@@ -67,14 +67,8 @@ void nmea2000_setup()
 	// set device information
 
 	#if 1
-		// the product information doesnt seem correct
-		// in actisense
-		//     LEN are both 1 (50ma)
-		//	   ModelID is "Arduino N2K->PC"
-		//	   Softare ID is "1.0.0.0"
-		//	   Hardware ID is "1.0.0"
-		// perhaps it is the INSTANCES or the
-		// device number ...
+
+		// I am not currently calling SetDeviceInstance() but it's working "ok"
 
 		nmea2000.SetProductInformation(
 			"prh_model_100",            // Manufacturer's Model serial code
@@ -114,6 +108,10 @@ void nmea2000_setup()
 		// N2km_ListenOnly
 		// N2km_SendOnly
 
+	// configure forwarding or disable it
+	// Note about SetForwardOwnMessages.  Not clear about this example comment:
+	// "read/write streams are the same, so dont forward own messages", so
+	// I keep playing with true/false in both forwards
 
 	#if TO_ACTISENSE || FAKE_ACTISENSE
 		nmea2000.SetForwardStream(&ACTISENSE_PORT);
@@ -127,16 +125,17 @@ void nmea2000_setup()
 		nmea2000.EnableForward(false);
 	#endif
 
-	// Note about SetForwardOwnMessages.  Not clear about this example comment:
-	// "read/write streams are the same, so dont forward own messages", so
-	// I keep playing with true/false in both forwards
 
 	// nmea2000.SetDebugMode(tNMEA2000::dm_ClearText);
-	//	  I don't think I want this. It is a way to fake out SendMsg()
+	//	  I don't think I care about this debugging mode.
+	//	  It appears to merely be a way to turn off all
+	//	  actual CANBUS/actisense IO and work only with
+	//    serial debugging output.
 
-	#if 0	// note that AllMessages is empty at this time
-		// I could not get this to eliminate need for DEBUG_RXANY
-		// compiile flag in the Monitor
+	#if 0
+		// Note that AllMessages is empty at this time
+		// I could not get this to eliminate need for DEBUG_RXANY=1
+		// compiile flag in the Monitor. See notes elsewhere.
 
 		// I now believe that the monitor
 		// (a) should not handle system message or advertise specifically that it does so
@@ -160,22 +159,27 @@ void nmea2000_setup()
 		#endif
 	#endif
 
+	// OPEN THE CANBUS PORT and start the NMEA2000 & mcp library
 
 	bool ok = nmea2000.Open();
 	if (!ok)
 		my_error("nmea2000.Open() failed",0);
 
+	// setup the actisense Reader
+	// Note that it has it's own "default source" 75,
+	// which is different than this device's address 99.
+
 	#if TO_ACTISENSE
 		actisenseReader.SetReadStream(&ACTISENSE_PORT);
 		actisenseReader.SetDefaultSource(75);
-			// ok, so we introduce a new device address here sheesh
 		actisenseReader.SetMsgHandler(handleActisenseMsg);
 	#endif
 
 
 	proc_leave();
 	display(dbg_mon,"nmea2000_setup() finished",0);
-}
+
+}	// nmea2000_setup()
 
 
 
@@ -183,111 +187,59 @@ void nmea2000_setup()
 //----------------------------
 // actisense
 //----------------------------
+// I want to start letting debugging be configured
+// at runtime with settings saved to NVS.  Much
+// work will be needed going forward.
 
 
 #if TO_ACTISENSE
+
+	#define DBG_ACTISENSE 0
+
+	#define ACOLOR "\033[96m"
+		// 96 = BRIGHT CYAN
+
 	tActisenseReader actisenseReader;
 
 	void handleActisenseMsg(const tN2kMsg &msg)
 	{
-		if (dbgSerial)
-		{
-			// 96 = BRIGHT CYAN
-			dbgSerial->print("\033[96mACTI: ");
+		#if DBG_ACTISENSE
+			dbgSerial->print(ACOLOR "ACTI: ");
 			msg.Print(dbgSerial);
-		}
+		#endif
 
 		// forward broadcast(255) and non-self messages to bus
 
-		#if 1	// temporarily turn off forwarding for clarity in debugging msgToSelf()
-			if (msg.Destination == 255 ||
-				msg.Destination != MONITOR_NMEA_ADDRESS)
-			{
-				nmea2000.SendMsg(msg,-1);
-				// return;
-			}
-		#endif
+		if (msg.Destination == 255 ||
+			msg.Destination != MONITOR_NMEA_ADDRESS)
+		{
+			nmea2000.SendMsg(msg,-1);
+		}
 
 		// handle broadcast and self messages
 
 		if (msg.Destination == 255 ||
 			msg.Destination == MONITOR_NMEA_ADDRESS)
 		{
-			#if USE_MY_MCP_CLASS
+			#if USE_MY_MCP_CLASS	// mainline, best, way to do this
 
-				// an experiment. Since we only respond to the hopefully simple
-				// single frame PGN(59904,xxx) packet, I am going to try to
-				// "slip" that into THIS device's receive frame queue.
-				// To do so, I had to create a derived NMEA2000_mymcp class.
+				#if DBG_ACTISENSE
+					dbgSerial->print(ACOLOR "    ACTISENSE calling msgToSelf()\r\n");
+				#endif
 
-				if (dbgSerial)
-					// 96 = BRIGHT CYAN
-					dbgSerial->print("\033[96m    ACTISENSE calling msgToSelf()\r\n");
+				// Handles all teated NMEA2000 message,
+				// including SYSTEM and INFO message
+				// So this DOES support the deviceList enumearing NMEA_Simulator devices
 
 				nmea2000.msgToSelf(msg,MONITOR_NMEA_ADDRESS);
 
-			#elif 0
-
-				display(dbg_mon,"    handling PGN(%d) to self(%d)",msg.PGN,MONITOR_NMEA_ADDRESS);
-	
-				// a perhaps better implementation based on calling CheckKnownMessages()
-				// and switch statement from the guts of HandleReceivedSystemMessage()
-				// however, these methods are all protected and I would need to either
-				// derive a class or modify the library in order to call them
-
-				bool is_sys_msg;
-				bool is_fast_packet;
-				if (nmea2000.CheckKnownMessage(msg.PGN,is_sys_msg,is_fast_packet))
-				{
-					display(dbg_mon,"    known PGN(%d) is_sys(%d) is_fast(%d)",msg.PGN,is_sys_msg,is_fast_packet);
-					if (is_sys_msg)
-					{
-						switch (msg.PGN)
-						{
-							case 59392L: /*ISO Acknowledgement*/
-								break;
-							case 59904L: /*ISO Request*/
-								nmea2000.HandleISORequest(msg);
-								break;
-							case 60928L: /*ISO Address Claim*/
-								nmea2000.HandleISOAddressClaim(msg);
-								break;
-							case 65240L: /*Commanded Address*/
-								nmea2000.HandleCommandedAddress(msg);
-								break;
-						#if !defined(N2K_NO_GROUP_FUNCTION_SUPPORT)
-							case 126208L: /*NMEA Request/Command/Acknowledge group function*/
-								nmea2000.HandleGroupFunction(msg);
-								break;
-						#endif
-						}
-					}
-				}
-
-			#else
+			#else	// bad old way of doing this
 
 				display(dbg_mon,"    handling PGN(%d) to self(%d)",msg.PGN,MONITOR_NMEA_ADDRESS);
 
-				// one would think that the NMEA library automatically handled
-				// all of these somehow.  I think for a while it did.
-				//
-				// I suspect it doesn't because I am trying to be BOTH an actisense
-				// interface AND a node-device on the net, and that is not an expected
-				// usage of the object model.
-				//
-				// In otherwords, no-one expected that an actisenseReader thing
-				// would also want to be an NMEA200 device.  Note that in none
-				// of the actisenseReader examples does Timo setup an NMEA2000 device.
-				//
-				// In any case, this is the only way I have found for my device
-				// product information to "show up" anywhere on the laptop
-				// when I am an actisenseReader, by explicitly handling these
-				// messages.
-				//
-				// I still suspect it will be broken for "group" requests,
-				// and I still haven't played with the DeviceList object with
-				// the idea of caching other devices on this object and/or
-				// displaying them somehow (on the OLED) for reference.
+				// ONLY handles certain PGN_REQUESTS
+				// DOES NOT handle incoming SYSTEM message like product and config INFO message
+				// SO this code DOES NOT support the deviceList enumerating NMEA_Simulator devices
 
 				if (msg.PGN == PGN_REQUEST)		// PGN_REQUEST == 59904L
 				{
@@ -306,28 +258,10 @@ void nmea2000_setup()
 							case PGN_DEVICE_CONFIG:
 								nmea2000.SendConfigurationInformation();
 								break;
-
-							// there is no parsePGN126464() method, and there
-							// is only one request for two different types of lists,
-							// althouigh there are separate API methods for sending them.
-							// Furthermore the documenttion says specifically that the
-							// Library handles these.
-							//
-							// I think I need to figure out "Grouip Functions" and
-							// the NMEA200 library N2kDeviceList object.
-
 							case PGN_PGN_LIST:
 								nmea2000.SendTxPGNList(msg.Source,0);	// 0 == iDev);
 								nmea2000.SendRxPGNList(msg.Source,0);	// 0 == iDev);
-
-								// nmea2000.SendMsg(msg,-1);
 								break;
-								//	case 2:
-								//		nmea2000.SendTxPGNList(255,0,false);
-								//		break;
-								//	case 3:
-								//		nmea2000.SendRxPGNList(255,0,false);
-								//		break;
 						}
 					}
 					else

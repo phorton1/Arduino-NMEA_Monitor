@@ -16,7 +16,7 @@
     static void onTelnetConnect(String ip)
     {
         display(dbg_mon,"Telnet connected from %s",ip.c_str());
-		#if WITH_OLED
+		#if WITH_OLED_MONITOR
 			mon.println("TELNET(%s)",ip.c_str());
 		#endif
 
@@ -50,7 +50,7 @@
 		telnet_connected = false;
 
         display(dbg_mon,"Telnet disconnect",0);
-		#if WITH_OLED
+		#if WITH_OLED_MONITOR
 			mon.println("TELNET DISCONNECT");
 		#endif
     }
@@ -58,7 +58,7 @@
     void onTelnetReconnect(String ip)
     {
         display(dbg_mon,"Telnet reconnected from %s",ip.c_str());
-		#if WITH_OLED
+		#if WITH_OLED_MONITOR
 			mon.println("RE-TELNET(%s)",ip.c_str());
 		#endif
 
@@ -80,7 +80,7 @@
     void onTelnetConnectionAttempt(String ip)
     {
         display(dbg_mon,"Telnet attempt from %s",ip.c_str());
-		#if WITH_OLED
+		#if WITH_OLED_MONITOR
 			mon.println("TELNET TRY(%s)",ip.c_str());
 		#endif
     }
@@ -90,7 +90,7 @@
 		// getting blank lines for some reason
 		#if 0
 			display(dbg_mon,"Telnet: %s",command.c_str());
-			#if WITH_OLED
+			#if WITH_OLED_MONITOR
 				mon.println(command.c_str());
 			#endif
 		#endif
@@ -100,7 +100,7 @@
     void init_telnet()
     {
         display(dbg_mon,"Starting Telnet",0);
-		#if WITH_OLED
+		#if WITH_OLED_MONITOR
 			mon.println("Starting Telnet");
 		#endif
         telnet.onConnect(onTelnetConnect);

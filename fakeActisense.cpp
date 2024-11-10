@@ -126,7 +126,7 @@
 					Serial.write(0x0D);
 					Serial.write(0x0A);
 					display(0,"SEND_REPLY",0);
-					#if WITH_OLED
+					#if WITH_OLED_MONITOR
 						mon.println("SEND_REPLY");
 					#endif
 				}
@@ -144,7 +144,7 @@
 		if (msg)
 		{
 			display(0,"clearbuf(%s)",msg);
-			#if WITH_OLED
+			#if WITH_OLED_MONITOR
 				mon.println("clearbuf(%s)",msg);
 			#endif
 		}
@@ -176,7 +176,7 @@
 		}
 
 		display(0,"actisense msg: %s",active_str);
-		#if WITH_OLED
+		#if WITH_OLED_MONITOR
 			mon.println(active_str);
 		#endif
 

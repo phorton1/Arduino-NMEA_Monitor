@@ -552,3 +552,24 @@ Weird.
 
 
 
+## Back to myNMEA2000_mcp
+
+I need to figure out how to create multiple CANBUS frames
+from large (134 byte) actisense messages.  Some blockquotes
+from https://www.csselectronics.com/pages/nmea-2000-n2k-intro-tutorial
+
+> A key part of the NMEA 2000 standard is the 'Fast Packet'.
+  As per SAE J1939-21 and ISO 11783-3, the NMEA 2000 standard supports
+  multi-packet communication of up to 1785 bytes via the ISO 15765-2 (ISO TP) standard.
+  However, NMEA 2000 often requires frame payloads that exceed 8 bytes, but far
+  less than 1785 bytes. Thus, the **Fast Packet** was introduced as a more efficient
+  transport protocol for medium-size payloads up to 223 bytes without any
+  transfer protocol delays. See the table overview for a comparison.
+
+> In the NMEA 2000 Fast Packet methodology, every frame retains the original PGN
+  identifier. This means that the multi-frame message can be uniquely identified
+  at the ID level, in contrast to the ISO TP implementation in J1939, ISOBUS and
+  UDS, in which message identification requires extraction of information from the
+  1st CAN frame payload data.
+
+

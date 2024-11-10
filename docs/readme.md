@@ -519,3 +519,36 @@ oled UI of this NMEA_Monitor if I ever get as far as to
 implement something for reasonable use on the tiny screen.
 
 
+## Speed of DeviceList
+
+It's slow.
+
+It actually would wait for a heartbeat before beginning it's polling
+of a particular device.
+
+And even then, I can't figure out where it delays in sending subseqient
+polling.
+
+
+I am going put debugging in, but I don't want to check it in.
+
+What a weird effing enumeration scheme.
+OK, so it's driven by general bus traffic.
+On a quiet bus it will take a long time to enumrate all the devices.
+
+Say your refrigderator is the only device on the bus
+and it sends a new temperature every 10 minutes.
+
+I will take 50 minutes to enumerate it.
+
+
+In my even fairly quick example where I send out
+a temperature every 500 ms, coupled with the 1000ms
+delays between sending ANY messages, and it will take
+at least 1000 * number of devices * 5 ms to enumerate the
+devices on the net.  C
+
+Weird.
+
+
+

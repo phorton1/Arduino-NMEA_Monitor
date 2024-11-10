@@ -17,8 +17,14 @@
 		// default CS = 15, we use 5
 #endif
 
+#if USE_MY_MCP_CLASS
+	myNMEA2000_mcp nmea2000(CAN_CS_PIN,MCP_8MHz);
+#else
+	tNMEA2000_mcp nmea2000(CAN_CS_PIN,MCP_8MHz);
+#endif
 
-tNMEA2000_mcp nmea2000(CAN_CS_PIN,MCP_8MHz);
+
+
 
 // I now believe that the monitor
 // (a) should not handle system message or advertise specifically that it does so
@@ -53,7 +59,7 @@ void nmea2000_setup()
 	display(dbg_mon,"nmea2000_setup() started",0);
 	proc_leave();
 
-	#if 1	// though I've never needed this, turned on for DeviceList
+	#if 0	// though I've never needed this, turned on for DeviceList
 		nmea2000.SetN2kCANSendFrameBufSize(150);
 		nmea2000.SetN2kCANReceiveFrameBufSize(150);
 	#endif
@@ -149,7 +155,11 @@ void nmea2000_setup()
 
 	#if WITH_DEVICE_LIST
 		  device_list = new tN2kDeviceList(&nmea2000);
+		#if ADD_SELF_TO_DEVICE_LIST
+			addSelfToDeviceList();
+		#endif
 	#endif
+
 
 	bool ok = nmea2000.Open();
 	if (!ok)
@@ -161,6 +171,7 @@ void nmea2000_setup()
 			// ok, so we introduce a new device address here sheesh
 		actisenseReader.SetMsgHandler(handleActisenseMsg);
 	#endif
+
 
 	proc_leave();
 	display(dbg_mon,"nmea2000_setup() finished",0);
@@ -181,34 +192,44 @@ void nmea2000_setup()
 	{
 		if (dbgSerial)
 		{
-			dbgSerial->print("*");
+			// 96 = BRIGHT CYAN
+			dbgSerial->print("\033[96mACTI: ");
 			msg.Print(dbgSerial);
 		}
-		display(dbg_mon,"ACTISENSE(%d) source(%d) dest(%d) priority(%d)",
-			msg.PGN,
-			msg.Source,
-			msg.Destination,
-			msg.Priority);
 
-		// forward broadcast and non-self messages to bus
+		// forward broadcast(255) and non-self messages to bus
 
-		if (msg.Destination == 255 ||
-			msg.Destination != MONITOR_NMEA_ADDRESS)
-		{
-			nmea2000.SendMsg(msg,-1);
-			// return;
-		}
-
+		#if 1	// temporarily turn off forwarding for clarity in debugging msgToSelf()
+			if (msg.Destination == 255 ||
+				msg.Destination != MONITOR_NMEA_ADDRESS)
+			{
+				nmea2000.SendMsg(msg,-1);
+				// return;
+			}
+		#endif
 
 		// handle broadcast and self messages
 
 		if (msg.Destination == 255 ||
 			msg.Destination == MONITOR_NMEA_ADDRESS)
 		{
-			display(dbg_mon,"    handling PGN(%d) to self(%d)",msg.PGN,MONITOR_NMEA_ADDRESS);
+			#if USE_MY_MCP_CLASS
 
-			#if 0
+				// an experiment. Since we only respond to the hopefully simple
+				// single frame PGN(59904,xxx) packet, I am going to try to
+				// "slip" that into THIS device's receive frame queue.
+				// To do so, I had to create a derived NMEA2000_mymcp class.
 
+				if (dbgSerial)
+					// 96 = BRIGHT CYAN
+					dbgSerial->print("\033[96m    ACTISENSE calling msgToSelf()\r\n");
+
+				nmea2000.msgToSelf(msg,MONITOR_NMEA_ADDRESS);
+
+			#elif 0
+
+				display(dbg_mon,"    handling PGN(%d) to self(%d)",msg.PGN,MONITOR_NMEA_ADDRESS);
+	
 				// a perhaps better implementation based on calling CheckKnownMessages()
 				// and switch statement from the guts of HandleReceivedSystemMessage()
 				// however, these methods are all protected and I would need to either
@@ -244,6 +265,8 @@ void nmea2000_setup()
 				}
 
 			#else
+
+				display(dbg_mon,"    handling PGN(%d) to self(%d)",msg.PGN,MONITOR_NMEA_ADDRESS);
 
 				// one would think that the NMEA library automatically handled
 				// all of these somehow.  I think for a while it did.

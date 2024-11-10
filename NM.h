@@ -6,15 +6,28 @@
 #pragma once
 
 #define dbg_mon			0
-
 #include <myDebug.h>
-#include <NMEA2000_mcp.h>
+
+
+#define USE_MY_MCP_CLASS	1
+	// an experiment.
+	// Use a derived NMEA2000_mymcp class that has an InsertRxMsg()
+	// method that can slip single frame NMEA2000 messages back into
+	// THIS devices CAN Receive queue.
+
+#if USE_MY_MCP_CLASS
+	#include "myNMEA2000_mcp.h"
+#else
+	#include <NMEA2000_mcp.h>
+#endif
+
 // #include <N2kMessages.h>
 // #include <N2kMessagesEnumToStr.h>
 // #include <SPI.h>
 
 
 #define MONITOR_NMEA_ADDRESS	99
+
 
 
 #define CAN_CS_PIN		5
@@ -52,11 +65,14 @@
 // The DeviceList is less than completely useful.
 // Maybe nice on the oled in a semi-finished deployment.
 
-#define WITH_DEVICE_LIST	0
+#define WITH_DEVICE_LIST	1
+#define ADD_SELF_TO_DEVICE_LIST  1
 	// make this device also keep a list of  devices
+	// and if so, possibly add self to it
+	// only if USE_MY_MCP_CLASS
 
 
-// kludges
+// other kludges
 
 #define WITH_SERIAL_COMMANDS	1
 	// WITH_SERIAL_COMMANDS is a kludge that currently
@@ -97,39 +113,22 @@
 	// to the DEBUG_PORT in text mode.
 
 
-// OLD:
-//
-//	#define WITH_SERIAL2	1
-//		// Use Serial2 port for dbgSerial
-//	#define PASS_THRU_TO_SERIAL		1
-//		// Required for Actisense, but also perhaps handy
-//		// if not to see "Text" representation of NMEA2000 bus
-//
-//	// Only ONE of the next two should be defined.
-//	// and really only if PASS_THRU_TO_SERIAL is set
-//
-//	#define FAKE_ACTISENSE			0
-//		// use fake actisense methods for debugging
-//	#define TO_ACTISENSE			1
-//		// use real tActisenseReader object
-//		// In last two cases we set the USB Serial port to 115200 for
-//		// output to the ActisenseReader application and handle
-//		// input from USB Serial in one of these two ways
-
-
-
-
-
 //----------------------------------
 // end of conditional defines
 //----------------------------------
 // start of actual "stuff"
 
 #if WITH_DEVICE_LIST
+
 	#include <N2kDeviceList.h>
 	extern tN2kDeviceList *device_list;
 	extern void listDevices(bool force = false);
 		// in nmDeviceList.cpp
+
+	#if ADD_SELF_TO_DEVICE_LIST
+		extern void addSelfToDeviceList();
+	#endif
+
 #endif
 
 
@@ -170,7 +169,14 @@
 
 // in NM.cpp
 
-extern tNMEA2000_mcp nmea2000;
+#if USE_MY_MCP_CLASS
+	extern myNMEA2000_mcp nmea2000;
+#else
+	extern tNMEA2000_mcp nmea2000;
+#endif
+
+
+
 extern const unsigned long AllMessages[];
 
 extern void nmea2000_setup();

@@ -129,7 +129,7 @@ void setup()
 				// try to add self to device_list
 				// via PGN_PRODUCT_INFO ... maybe need address claim first  
 
-				#if WITH_DEVICE_LIST
+				#if 0 && WITH_DEVICE_LIST
 					if (device_list)
 					{
 						tN2kMsg msg;

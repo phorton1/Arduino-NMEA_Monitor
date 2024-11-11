@@ -4,13 +4,22 @@
 
 #pragma once
 
+#define USE_MY_ESP_TELNET		 1
+
 #define NMEA2000_CLASS	tNMEA2000_mcp
 
 #include <NMEA2000_mcp.h>
 #include <N2kDeviceList.h>
 #include <ActisenseReader.h>
 #include <WiFi.h>
-#include <ESPTelnetStream.h>
+
+#if USE_MY_ESP_TELNET
+	#include <myESPTelnetStream.h>
+	#define ESPTELNET_CLASS myESPTelnetStream
+#else
+	#include <ESPTelnetStream.h>
+	#define ESPTELNET_CLASS ESPTelnetStream
+#endif
 
 
 //------------------------------
@@ -70,7 +79,7 @@
 #define DEFAULT_WITH_OLED		1
 	// implements ST7789 oled to act as a small system monitor display
 
-#define DEFAULT_WITH_TELNET		0
+#define DEFAULT_WITH_TELNET		1
 	// WIFI is only used to drive TELNET, which is assigned
 	// to myDebug::extraSerial when telnet is connected.
 	// Connects using myPrivate.h credentials, then nstantiates
@@ -93,11 +102,14 @@
 #define DEFAULT_DEBUG_BUS	1
 	// Will show messages that are not otherwise explicitly handled
 	// by onBusMessage() in WHITE
-#define DEFAULT_DEBUG_ACTISENSE	1
+#define DEFAULT_DEBUG_ACTISENSE	0
 	// Will show messages that are recieved via ACTISENSE in CYAN
-#define DEFAULT_DEBUG_SELF	1
+#define DEFAULT_DEBUG_SELF	0
 	// Will show messages that are sent with msgToSelf(), and
 	// the processing in CANGetGrame() self in MAGENTA
+#define DEFAULT_DEBUG_SENSORS	1
+	// Will show parsed sensor mssages as they come into onBusMessage()
+	
 
 //---------------------------------
 // class definition
@@ -135,30 +147,33 @@ public:
 	static bool m_DEBUG_BUS;
 	static bool m_DEBUG_SELF;
 	static bool m_DEBUG_ACTISENSE;
+	static bool m_DEBUG_SENSORS;
 	
 
 protected:
 
-	ESPTelnetStream *m_telnet;
+	ESPTELNET_CLASS *m_telnet;
 	tN2kDeviceList *m_device_list;
 	tActisenseReader *m_actisense_reader;
 
-	bool m_telnet_connected;
 	bool m_broadcase_nmea_info;
 	
 	static void onBusMessage(const tN2kMsg &msg);
 	static void onActisenseMessage(const tN2kMsg &msg);
-
-	void initOled();
-	void initTelnet();
-
-	void listDevices();
-	void addSelfToDeviceList();
 	void broadcastNMEA2000Info();
 	void handleSerialChar(uint8_t byte, bool telnet=false);
 
+
+	void initOled();
+		// in nmOled.cpp
+
+	void listDevices();
+	void addSelfToDeviceList();
+		// in nmDeviceList.cpp
+
 	void msgToSelf(const tN2kMsg &msg, uint8_t dest_addr);
 	bool CANGetFrame(unsigned long &id, unsigned char &len, unsigned char *buf) override;
+		// in nmSelf.cpp
 		// These two methods implement msgToSelf() method that can insert
 		// NMEA2000 messages for THIS device into the CANBUS rx queue so that
 		// they are acted on by the library code. Primarily used to handle actisense
@@ -171,13 +186,14 @@ protected:
 		// and (b) specifically all actisense) messages to the
 		// deviceList::handleMsg() method.
 
-	// telnet callbacks
+	// telnet implementation in nmTelnet.cpp
 
+	void initTelnet();
+	void telnetLoop();
 	static void onTelnetConnect(String ip);
 	static void onTelnetDisconnect(String ip);
 	static void onTelnetReconnect(String ip);
 	static void onTelnetConnectionAttempt(String ip);
-	static void onTelnetReceived(String command);
 	
 }; 	// class myNM
 

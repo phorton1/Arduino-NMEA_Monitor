@@ -9,12 +9,11 @@
 #include <N2kMessagesEnumToStr.h>
 
 #define dbg_mon			0		// general debugging
-#define dbg_sensors		0		// show sensor readings
-
 
 bool myNM::m_DEBUG_BUS = DEFAULT_DEBUG_BUS;
 bool myNM::m_DEBUG_SELF = DEFAULT_DEBUG_SELF;
 bool myNM::m_DEBUG_ACTISENSE = DEFAULT_DEBUG_ACTISENSE;
+bool myNM::m_DEBUG_SENSORS = DEFAULT_DEBUG_SENSORS;
 
 
 #define ACTI_COLOR "\033[96m"
@@ -417,7 +416,8 @@ void myNM::onBusMessage(const tN2kMsg &msg)
 			if (ParseN2kPGN127250(msg, sid, d1,d2,d3, ref))
 			{
 				msg_handled = true;
-				display(dbg_sensors,"heading(%d) : %0.3f degrees",msg_counter,RadToDeg(d1));
+				if (m_DEBUG_SENSORS)
+					display(0,"heading(%d) : %0.3f degrees",msg_counter,RadToDeg(d1));
 			}
 			else
 				my_error("Parsing PGN_HEADING(128267)",0);
@@ -429,7 +429,8 @@ void myNM::onBusMessage(const tN2kMsg &msg)
 			if (ParseN2kPGN128259(msg, sid, d1, d2, SWRT))
 			{
 				msg_handled = true;
-				display(dbg_sensors,"speed(%d) : %0.3f kts",msg_counter,msToKnots(d1));
+				if (m_DEBUG_SENSORS)
+					display(0,"speed(%d) : %0.3f kts",msg_counter,msToKnots(d1));
 			}
 			else
 				my_error("Parsing PGN_SPEED(128267)",0);
@@ -440,7 +441,8 @@ void myNM::onBusMessage(const tN2kMsg &msg)
 			if (ParseN2kPGN128267(msg,sid,d1,d2,d3))
 			{
 				msg_handled = true;
-				display(dbg_sensors,"depth(%d) : %0.3f meters",msg_counter,d1);
+				if (m_DEBUG_SENSORS)
+					display(0,"depth(%d) : %0.3f meters",msg_counter,d1);
 			}
 			else
 				my_error("Parsing PGN_DEPTH(128267)",0);
@@ -454,7 +456,8 @@ void myNM::onBusMessage(const tN2kMsg &msg)
 			if (ParseN2kPGN130316(msg,sid,instance,source,d1,d2))
 			{
 				msg_handled = true;
-				display(dbg_sensors,"temp(%d) : %0.3fC",msg_counter,KelvinToC(d1));
+				if (m_DEBUG_SENSORS)
+					display(0,"temp(%d) : %0.3fC",msg_counter,KelvinToC(d1));
 			}
 			else
 				my_error("Parsing PGN_TEMPERATURE(130316)",0);
@@ -504,7 +507,7 @@ void myNM::loop()
 	}
 
 	if (m_telnet)
-		m_telnet->loop();
+		telnetLoop();
 }
 
 

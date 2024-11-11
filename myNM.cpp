@@ -1,0 +1,484 @@
+//-----------------------------------------------------
+// myNM.cpp
+//-----------------------------------------------------
+
+#include "myNM.h"
+#include <myDebug.h>
+#include <SPI.h>
+#include <N2kMessages.h>
+#include <N2kMessagesEnumToStr.h>
+
+#define dbg_mon			0		// general debugging
+#define dbg_sensors		0		// show sensor readings
+#define dbg_actisense	0		// debug old actisense stuff
+
+
+#define DEBUG_BUS		0		// show unhandled bus messages in white
+
+#define DBG_ACTISENSE 	0		// show actisense stuff in cyan
+
+#define ACOLOR "\033[96m"
+	// 96 = BRIGHT CYAN
+
+
+#if USE_HSPI
+	SPIClass *hspi;
+		// MOSI=13
+		// MISO=12
+		// SCLK=14
+		// default CS = 15, we use 5
+#endif
+
+
+#if 0
+	// I now believe that the monitor
+	// (a) should not directly handle system message or advertise specifically that it does so
+	// (b) should not advertise the messages it receives from sensors
+
+	const unsigned long AllMessages[] = {
+		#if 0
+			PGN_REQUEST,
+			PGN_ADDRESS_CLAIM,
+			PGN_PGN_LIST,
+			PGN_HEARTBEAT,
+			PGN_PRODUCT_INFO,
+			PGN_DEVICE_CONFIG,
+		#endif
+		#if 0
+			PGN_TEMPERATURE,
+			PGN_HEADING,
+			PGN_SPEED,
+			PGN_DEPTH,
+		#endif
+		0};
+#endif
+
+
+
+void myNM::setup(
+	bool with_actisense			 /* = DEFAULT_WITH_ACTISENSE */,
+	bool with_oled 				 /* = DEFAULT_WITH_OLED */,
+	bool with_telnet 			 /* = DEFAULT_WITH_TELNET */,
+	bool with_device_list 		 /* = DEFAULT_WITH_DEVICE_LIST */,
+	bool add_self_to_device_list /* = DEFAULT_ADD_SELF_TO_DEVICE_LIST */,
+	bool broadcast_nmea_info 	 /* = DEFAULT_BROADCAST_NMEA200_INFO */ )
+{
+	m_broadcase_nmea_info = broadcast_nmea_info;
+
+	display(dbg_mon,"myNM::setup() started",0);
+	proc_entry();
+
+	if (with_oled)
+		initOled();
+
+	if (with_actisense)
+		Serial2.begin(115200);
+
+	if (with_telnet)
+		initTelnet();
+
+	//--------------------------------------
+	// nmea setup
+	//--------------------------------------
+
+	#if 0	// the program works well enough with the defaults of 50
+		SetN2kCANSendFrameBufSize(150);
+		SetN2kCANReceiveFrameBufSize(150);
+	#endif
+
+	// set device information
+	// I am not currently calling SetDeviceInstance() but it's working "ok"
+
+	SetProductInformation(
+		"prh_model_100",            // Manufacturer's Model serial code
+		100,                        // Manufacturer's uint8_t product code
+		"ESP32 NMEA Monitor",       // Manufacturer's Model ID
+		"prh_sw_100.0",             // Manufacturer's Software version code
+		"prh_mv_100.0",             // Manufacturer's uint8_t Model version
+		3,                          // LoadEquivalency uint8_t 3=150ma; Default=1. x * 50 mA
+		2101,                       // N2kVersion Default=2101
+		1,                          // CertificationLevel Default=1
+		0                           // iDev (int) index of the device on \ref Devices
+		);
+	SetConfigurationInformation(
+		"prhSystems",           // ManufacturerInformation
+		"MonitorInstall1",      // InstallationDescription1
+		"MonitorInstall2"       // InstallationDescription2
+		);
+	SetDeviceInformation(
+		1230100, // uint32_t Unique number. Use e.g. Serial number.
+		130,     // uint8_t  Device function=Analog to NMEA 2000 Gateway. See codes on https://web.archive.org/web/20190531120557/https://www.nmea.org/Assets/20120726%20nmea%202000%20class%20&%20function%20codes%20v%202.00.pdf
+		25,      // uint8_t  Device class=Inter/Intranetwork Device. See codes on https://web.archive.org/web/20190531120557/https://www.nmea.org/Assets/20120726%20nmea%202000%20class%20&%20function%20codes%20v%202.00.pdf
+		2046     // uint16_t choosen free from code list on https://web.archive.org/web/20190529161431/http://www.nmea.org/Assets/20121020%20nmea%202000%20registration%20list.pdf
+		);
+
+	// note that I typically use iDev=0 for creating THIS device
+	// in each implementation; it is internal to the NME2000 library
+	// and not broadcast.
+
+	// set Device Mode and it's address(99)
+
+	SetMode(tNMEA2000::N2km_ListenAndNode, MONITOR_NMEA_ADDRESS);
+		// N2km_NodeOnly
+		// N2km_ListenAndNode *
+		// N2km_ListenAndSend **
+		// N2km_ListenOnly
+		// N2km_SendOnly
+
+	// configure forwarding or disable it
+	// Note about SetForwardOwnMessages.  Not clear about this example comment:
+	// "read/write streams are the same, so dont forward own messages", so
+	// I keep playing with true/false in both forwards
+
+
+	if (with_actisense)
+	{
+		SetForwardStream(&Serial2);
+		SetForwardType(tNMEA2000::fwdt_Actisense);
+		SetForwardOwnMessages(true);
+	}
+	else
+	{
+		#if 0
+			SetForwardType(tNMEA2000::fwdt_Text); 	// Show bus data in clear text
+			SetForwardStream(&Serial);
+			SetForwardOwnMessages(true);
+		#else
+			EnableForward(false);
+		#endif
+	}
+
+
+	#if 0
+		// I could not get this to eliminate need for DEBUG_RXANY=1
+		// compiile flag in the Monitor. See notes elsewhere.
+		ExtendReceiveMessages(AllMessages);
+		ExtendTransmitMessages(AllMessages);
+	#endif
+
+	SetMsgHandler(onBusMessage);
+
+	#if USE_HSPI
+		hspi = new SPIClass(HSPI);
+		SetSPI(hspi);
+	#endif
+
+	if (with_device_list)
+	{
+		m_device_list = new tN2kDeviceList(this);
+		if (add_self_to_device_list)
+			addSelfToDeviceList();
+	}
+
+	//----------------------------
+	// OPEN THE CANBUS
+	//----------------------------
+
+	bool ok = Open();
+	if (!ok)
+		my_error("NMEA2000::Open() failed",0);
+
+
+	// setup the actisense Reader
+	// Note that it has it's own "default source" 75,
+	// which is different than this device's address 99.
+
+	if (with_actisense)
+	{
+		m_actisense_reader = new tActisenseReader();
+		m_actisense_reader->SetReadStream(&Serial2);
+		m_actisense_reader->SetDefaultSource(75);
+		m_actisense_reader->SetMsgHandler(onActisenseMessage);
+	}
+
+
+	proc_leave();
+	display(dbg_mon,"myNM::setup() finished",0);
+
+}	// myNM::setup()
+
+
+
+//---------------------------------
+// utilities
+//---------------------------------
+
+void myNM::broadcastNMEA2000Info()
+{
+	#define NUM_INFOS		4
+	#define MSG_SEND_TIME	2000
+	static int info_sent;
+	static uint32_t last_send_time;
+
+	uint32_t now = millis();
+	if (info_sent < NUM_INFOS && now - last_send_time > MSG_SEND_TIME)
+	{
+		last_send_time = now;
+		ParseMessages(); // Keep parsing messages
+
+		// at this time I have not figured out the actisense reader, and how to
+		// get the whole system to work so that when it asks for device configuration(s)
+		// and stuff, we send it stuff.  However, this code explicitly sends some info
+		// at boot, and I have seen the results get to the reader!
+
+		switch (info_sent)
+		{
+			case 0:
+				SendProductInformation(
+					255,	// unsigned char Destination,
+					0,		// only device
+					false);	// bool UseTP);
+				break;
+			case 1:
+				SendConfigurationInformation(255,0,false);
+				break;
+			case 2:
+				SendTxPGNList(255,0,false);
+				break;
+			case 3:
+				SendRxPGNList(255,0,false);	// empty right now for the sensor
+				break;
+		}
+
+		info_sent++;
+		ParseMessages();
+	}
+}
+
+
+
+void myNM::handleSerialChar(uint8_t byte, bool telnet)
+{
+	if (byte == 'q')
+	{
+		display(dbg_mon,"Sending PGN_REQUEST(PGN_PRODUCT_INFO) message",0);
+		tN2kMsg msg;
+		SetN2kPGN59904(msg, 255, PGN_PRODUCT_INFO);
+		SendMsg(msg, 0);
+			// 0 == idx of THIS device by my setup()
+	}
+	else if (byte == 'i')
+	{
+		display(dbg_mon,"calling SendProductInformation()",0);
+		SendProductInformation();
+	}
+	else if (byte == 'l')
+	{
+		if (m_device_list)
+		{
+			display(dbg_mon,"calling listDevices()",0);
+			listDevices();
+		}
+		else
+			my_error("NO DEVICE LIST!!",0);
+	}
+	else
+	{
+		warning(0,"unhandled serial char(0x%02x)='%c'",byte,byte>=32?byte:' ');
+	}
+}
+
+
+//----------------------------
+// onActisenseMessage
+//----------------------------
+// I want to start letting debugging be configured
+// at runtime with settings saved to NVS.  Much
+// work will be needed going forward.
+
+// static
+void myNM::onActisenseMessage(const tN2kMsg &msg)
+{
+	#if DBG_ACTISENSE
+		Serial.print(ACOLOR "ACTI: ");
+		msg.Print(&Serial);
+	#endif
+
+	// forward broadcast(255) and non-self messages to bus
+
+	if (msg.Destination == 255 ||
+		msg.Destination != MONITOR_NMEA_ADDRESS)
+	{
+		my_nm.SendMsg(msg,-1);
+	}
+
+	// handle broadcast and self messages
+
+	if (msg.Destination == 255 ||
+		msg.Destination == MONITOR_NMEA_ADDRESS)
+	{
+		#if USE_MY_MCP_CLASS	// mainline, best, way to do this
+
+			#if DBG_ACTISENSE
+				Serial.print(ACOLOR "    ACTISENSE calling msgToSelf()\r\n");
+			#endif
+
+			// Handles all teated NMEA2000 message,
+			// including SYSTEM and INFO message
+			// So this DOES support the deviceList enumearing NMEA_Simulator devices
+
+			my_nm.msgToSelf(msg,MONITOR_NMEA_ADDRESS);
+
+		#else	// bad old way of doing this
+
+			display(dbg_actisense,"    handling PGN(%d) to self(%d)",msg.PGN,MONITOR_NMEA_ADDRESS);
+
+			// ONLY handles certain PGN_REQUESTS
+			// DOES NOT handle incoming SYSTEM message like product and config INFO message
+			// SO this code DOES NOT support the deviceList enumerating NMEA_Simulator devices
+
+			if (msg.PGN == PGN_REQUEST)		// PGN_REQUEST == 59904L
+			{
+				unsigned long requested_pgn;
+				if (ParseN2kPGN59904(msg, requested_pgn))
+				{
+					display(dbg_actisense,"    requested_pgn=%d",requested_pgn);
+					switch (requested_pgn)
+					{
+						case PGN_ADDRESS_CLAIM:
+							my_nm.SendIsoAddressClaim();
+							break;
+						case PGN_PRODUCT_INFO:
+							my_nm.SendProductInformation();
+							break;
+						case PGN_DEVICE_CONFIG:
+							my_nm.SendConfigurationInformation();
+							break;
+						case PGN_PGN_LIST:
+							my_nm.SendTxPGNList(msg.Source,0);	// 0 == iDev);
+							my_nm.SendRxPGNList(msg.Source,0);	// 0 == iDev);
+							break;
+					}
+				}
+				else
+					my_error("Error parsing PGN(%d)",msg.PGN);
+			}
+
+		#endif	// bad old way
+	}
+}	// onActisenseMessage()
+
+
+
+
+
+//---------------------------------
+// onBusMessage
+//---------------------------------
+// Handles sensor messages and can show others from the bus
+// i.e. PGN=130316 temperatureC = -100000000000 ?!?!?!
+
+// static
+void myNM::onBusMessage(const tN2kMsg &msg)
+{
+	bool msg_handled = false;
+	static uint32_t msg_counter = 0;
+	msg_counter++;
+
+	if (msg.Destination == 255 ||
+		msg.Destination == MONITOR_NMEA_ADDRESS)
+	{
+		uint8_t sid;
+		double d1,d2,d3;
+
+		if (msg.PGN == PGN_HEADING)
+		{
+			// heading is in radians
+			tN2kHeadingReference ref;
+			if (ParseN2kPGN127250(msg, sid, d1,d2,d3, ref))
+			{
+				msg_handled = true;
+				display(dbg_sensors,"heading(%d) : %0.3f degrees",msg_counter,RadToDeg(d1));
+			}
+			else
+				my_error("Parsing PGN_HEADING(128267)",0);
+		}
+		else if (msg.PGN == PGN_SPEED)
+		{
+			// speed is in meters/second
+			tN2kSpeedWaterReferenceType SWRT;
+			if (ParseN2kPGN128259(msg, sid, d1, d2, SWRT))
+			{
+				msg_handled = true;
+				display(dbg_sensors,"speed(%d) : %0.3f kts",msg_counter,msToKnots(d1));
+			}
+			else
+				my_error("Parsing PGN_SPEED(128267)",0);
+		}
+		else if (msg.PGN == PGN_DEPTH)
+		{
+			// depth is in meters
+			if (ParseN2kPGN128267(msg,sid,d1,d2,d3))
+			{
+				msg_handled = true;
+				display(dbg_sensors,"depth(%d) : %0.3f meters",msg_counter,d1);
+			}
+			else
+				my_error("Parsing PGN_DEPTH(128267)",0);
+		}
+		else if (msg.PGN == PGN_TEMPERATURE)
+		{
+			// temperature is in kelvin
+			uint8_t instance;
+			tN2kTempSource source;
+
+			if (ParseN2kPGN130316(msg,sid,instance,source,d1,d2))
+			{
+				msg_handled = true;
+				display(dbg_sensors,"temp(%d) : %0.3fC",msg_counter,KelvinToC(d1));
+			}
+			else
+				my_error("Parsing PGN_TEMPERATURE(130316)",0);
+		}
+	}	// 255 or MONITOR_NMEA_ADDRESS
+
+
+	// show unhandled messages as BUS: in white
+
+	if (!msg_handled)
+	{
+		#if DEBUG_BUS
+			Serial.print("BUS: ");
+			msg.Print(&Serial);
+		#endif
+	}
+
+}	// onBusMessage()
+
+
+
+
+
+
+//-----------------------------------
+// loop()
+//-----------------------------------
+
+
+void myNM::loop()
+{
+	static bool started = false;
+	if (!started)
+	{
+		started = true;
+		display(dbg_mon,"myNM::loop() started",0);
+	}
+
+	if (m_broadcase_nmea_info)
+		broadcastNMEA2000Info();
+
+	ParseMessages();
+	if (m_actisense_reader)
+		m_actisense_reader->ParseMessages();
+
+	if (Serial.available())
+	{
+		uint8_t byte = Serial.read();
+		handleSerialChar(byte,false);
+	}
+
+	if (m_telnet)
+		m_telnet->loop();
+}
+
+

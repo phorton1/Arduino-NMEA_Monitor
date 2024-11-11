@@ -11,10 +11,10 @@ class myNMEA2000_mcp : public tNMEA2000_mcp
 public:
 
     myNMEA2000_mcp(
-		unsigned char _N2k_CAN_CS_pin,
-		unsigned char _N2k_CAN_clockset = MCP_16MHz,
-        unsigned char _N2k_CAN_int_pin = 0xff,
-		uint16_t _rx_frame_buf_size=MCP_CAN_RX_BUFFER_SIZE);
+		unsigned char cs_pin,
+		unsigned char clock_set = MCP_16MHz,
+        unsigned char int_pin 	= 0xff,
+		uint16_t rx_bufs		= MCP_CAN_RX_BUFFER_SIZE);
 
 	void msgToSelf(const tN2kMsg &msg, uint8_t self_addr);
 

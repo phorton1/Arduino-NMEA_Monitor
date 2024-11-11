@@ -7,6 +7,14 @@
 //
 
 
+// 130316 "Temperature, Extended Range",
+	//  temperature sensor with data type 14 (Exhaust Gas).
+
+#define PGN_AC_VOLTAGE_FREQ			127747L 	// "AC Voltage / Frequency-Phase A".
+	// see https://www.yachtd.com/news/  July 31, 2024 Engine Gateway YDEG-04
+
+
+
 PGN: 127512 - AGS Configuration Status
     Field #1: AGS Instance
         Bits: 8

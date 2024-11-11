@@ -12,15 +12,11 @@
 
 
 myNMEA2000_mcp::myNMEA2000_mcp(
-	unsigned char _N2k_CAN_CS_pin,
-	unsigned char _N2k_CAN_clockset /* = MCP_16MHz */,
-	unsigned char _N2k_CAN_int_pin  /* = 0xff */,
-	uint16_t _rx_frame_buf_size		/* = MCP_CAN_RX_BUFFER_SIZE */) :
-	tNMEA2000_mcp(
-		_N2k_CAN_CS_pin,
-		_N2k_CAN_clockset,
-		_N2k_CAN_int_pin,
-		_rx_frame_buf_size)
+		unsigned char cs_pin,
+		unsigned char clock_set /* = MCP_16MHz */,
+        unsigned char int_pin 	/* = 0xff */,
+		uint16_t rx_bufs		/* = MCP_CAN_RX_BUFFER_SIZE */ ) :
+	tNMEA2000_mcp(cs_pin,clock_set,int_pin,rx_bufs)
 {}
 
 

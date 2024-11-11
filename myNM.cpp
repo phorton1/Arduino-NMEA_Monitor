@@ -505,9 +505,17 @@ void myNM::loop()
 		uint8_t byte = Serial.read();
 		handleSerialChar(byte,false);
 	}
+	if (extraSerial && extraSerial->available())
+	{
+		uint8_t byte = extraSerial->read();
+		if (byte)	// console.pm sends out 0 every 10 seconds as heartbeat
+			handleSerialChar(byte,true);
+	}
 
-	if (m_telnet)
-		telnetLoop();
+	#if (!USE_MY_ESP_TELNET)
+		if (m_telnet)
+			m_telnet->loop();
+	#endif
 }
 
 

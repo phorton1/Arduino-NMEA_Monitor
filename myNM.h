@@ -189,7 +189,6 @@ protected:
 	// telnet implementation in nmTelnet.cpp
 
 	void initTelnet();
-	void telnetLoop();
 	static void onTelnetConnect(String ip);
 	static void onTelnetDisconnect(String ip);
 	static void onTelnetReconnect(String ip);

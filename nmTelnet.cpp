@@ -102,35 +102,4 @@ void myNM::initTelnet()
 }
 
 
-void myNM::telnetLoop()
-{
-	if (!m_telnet)
-		return;
-
-	#if USE_MY_ESP_TELNET
-		#if !WITH_MY_ESP_TELNET_TASK
-			m_telnet->loop();
-		#endif
-	#else
-		m_telnet->loop();
-	#endif
-
-	if (extraSerial && !m_telnet->isConnected())
-	{
-		extraSerial = 0;
-		warning(dbg_telnet,"Telnet disconnected in telnetLoop()",0);
-	}
-
-	// my console regularly sends a  0x00 hearbeat
-	// switching to use extraSerial and this method might go away
-
-	if (extraSerial && extraSerial->available())
-	{
-		uint8_t byte = extraSerial->read();
-		if (byte)
-			handleSerialChar(byte,true);
-	}
-}
-
-
 

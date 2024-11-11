@@ -8,32 +8,18 @@
 #define dbg_dl  0
 
 
-#define GCOLOR "\033[92m"
-
 static void displayIntList(const char *prefix, const unsigned long *list)
 {
     uint8_t i;
     if (list)
     {
-        Serial.print(GCOLOR);
-        Serial.print(prefix);
+        String rslt(prefix);
         for (i=0; list[i]!=0; i++)
         {
-            if (i>0) Serial.print(", ");
-            Serial.print(list[i]);
+            if (i>0) rslt += ", ";
+            rslt += String(list[i]);
         }
-        Serial.println();
-        if (my_nm.m_telnet_connected)
-        {
-            my_nm.m_telnet->print(GCOLOR);
-            my_nm.m_telnet->print(prefix);
-            for (i=0; list[i]!=0; i++)
-            {
-                if (i>0) my_nm.m_telnet->print(", ");
-                my_nm.m_telnet->print(list[i]);
-            }
-            my_nm.m_telnet->println();
-        }
+        display(0,rslt.c_str(),0);
     }
 }
 

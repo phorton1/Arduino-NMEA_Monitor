@@ -9,7 +9,7 @@
 #define dbg_telnet -0
 
 
-static void onTelnetConnect(String ip)
+void myNM::onTelnetConnect(String ip)
 {
 	display(dbg_telnet,"Telnet connected from %s",ip.c_str());
 	my_nm.m_telnet_connected = true;
@@ -17,14 +17,14 @@ static void onTelnetConnect(String ip)
 	my_nm.m_telnet->println("Welcome to the NMEA Monitor");
 }
 
-static void onTelnetDisconnect(String ip)
+void myNM::onTelnetDisconnect(String ip)
 {
 	extraSerial = 0;
 	my_nm.m_telnet_connected = false;
 	display(dbg_telnet,"Telnet disconnect",0);
 }
 
-static void onTelnetReconnect(String ip)
+void myNM::onTelnetReconnect(String ip)
 {
 	display(dbg_telnet,"Telnet reconnected from %s",ip.c_str());
 	my_nm.m_telnet_connected = true;
@@ -32,13 +32,13 @@ static void onTelnetReconnect(String ip)
 	my_nm.m_telnet->println("Welcome back to the NMEA Monitor");
 }
 
-static void onTelnetConnectionAttempt(String ip)
+void myNM::onTelnetConnectionAttempt(String ip)
 {
 	display(dbg_telnet,"Telnet attempt from %s",ip.c_str());
 }
 
 
-static void onTelnetReceived(String command)
+void myNM::onTelnetReceived(String command)
 {
 	// getting blank lines for some reason
 	#if 0

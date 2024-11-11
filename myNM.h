@@ -4,40 +4,13 @@
 
 #pragma once
 
+#define NMEA2000_CLASS	tNMEA2000_mcp
 
-#define USE_MY_MCP_CLASS	1
-	// Use a derived NMEA2000_mymcp class that has a msgToSelf()
-	// method that can insert NMEA2000 messages for THIS device
-	// into the CANBUS rx queue so that they are acted on by the
-	// library code. Primarily used to handle actisense messages
-	// to THIS device (node).
-	//
-	// Otherwise, in order to implement THIS as a node (with product
-	// information, etc), that is ALSO an actisenseReader WITH
-	// a deviceList, one has to (a) parse PGN_REQUESTa, and explicitly
-	// reply with product, configuration, address claims, and pgn_lists,
-	// and (b) specifically all actisense) messages to the
-	// deviceList::handleMsg() method.
-	//
-	// Not only does this duplicate much existing code, it was
-	// also very complicated and long winded to learn and write.
-	// So I wrote msgToSelf(). I currently am keeping the old
-	// explicit code in the handleActisenseMsg() method for posterity.
-
-#if USE_MY_MCP_CLASS
-	#define NMEA2000_CLASS	myNMEA2000_mcp
-	#include "myNMEA2000_mcp.h"
-#else
-	#include <NMEA2000_mcp.h>
-	#define NMEA2000_CLASS	tNMEA2000_mcp
-#endif
-
-
-
+#include <NMEA2000_mcp.h>
+#include <N2kDeviceList.h>
+#include <ActisenseReader.h>
 #include <WiFi.h>
 #include <ESPTelnetStream.h>
-#include <ActisenseReader.h>
-#include <N2kDeviceList.h>
 
 
 //------------------------------
@@ -117,6 +90,14 @@
 	// to make sure that other devices get it even if they are not
 	// requesting it.
 
+#define DEFAULT_DEBUG_BUS	1
+	// Will show messages that are not otherwise explicitly handled
+	// by onBusMessage() in WHITE
+#define DEFAULT_DEBUG_ACTISENSE	1
+	// Will show messages that are recieved via ACTISENSE in CYAN
+#define DEFAULT_DEBUG_SELF	1
+	// Will show messages that are sent with msgToSelf(), and
+	// the processing in CANGetGrame() self in MAGENTA
 
 //---------------------------------
 // class definition
@@ -143,8 +124,20 @@ public:
 		bool add_self_to_device_list = DEFAULT_ADD_SELF_TO_DEVICE_LIST,
 		bool broadcast_nmea_info 	 = DEFAULT_BROADCAST_NMEA200_INFO  );
 
-
 	void loop();
+
+	// utilities
+
+	static String msgToString(const tN2kMsg &msg, const char *prefix=0, bool with_data=true);
+		// prefix may be 0, used to identify source of message for display purposes
+		// will be prepended to string if provided
+
+	static bool m_DEBUG_BUS;
+	static bool m_DEBUG_SELF;
+	static bool m_DEBUG_ACTISENSE;
+	
+
+protected:
 
 	ESPTelnetStream *m_telnet;
 	tN2kDeviceList *m_device_list;
@@ -153,17 +146,38 @@ public:
 	bool m_telnet_connected;
 	bool m_broadcase_nmea_info;
 	
+	static void onBusMessage(const tN2kMsg &msg);
+	static void onActisenseMessage(const tN2kMsg &msg);
 
 	void initOled();
 	void initTelnet();
-
-	static void onBusMessage(const tN2kMsg &msg);
-	static void onActisenseMessage(const tN2kMsg &msg);
 
 	void listDevices();
 	void addSelfToDeviceList();
 	void broadcastNMEA2000Info();
 	void handleSerialChar(uint8_t byte, bool telnet=false);
+
+	void msgToSelf(const tN2kMsg &msg, uint8_t dest_addr);
+	bool CANGetFrame(unsigned long &id, unsigned char &len, unsigned char *buf) override;
+		// These two methods implement msgToSelf() method that can insert
+		// NMEA2000 messages for THIS device into the CANBUS rx queue so that
+		// they are acted on by the library code. Primarily used to handle actisense
+		// messages to THIS device (node).
+		//
+		// Otherwise, in order to implement THIS as a node (with product
+		// information, etc), that is ALSO an actisenseReader WITH
+		// a deviceList, one has to (a) parse PGN_REQUESTa, and explicitly
+		// reply with product, configuration, address claims, and pgn_lists,
+		// and (b) specifically all actisense) messages to the
+		// deviceList::handleMsg() method.
+
+	// telnet callbacks
+
+	static void onTelnetConnect(String ip);
+	static void onTelnetDisconnect(String ip);
+	static void onTelnetReconnect(String ip);
+	static void onTelnetConnectionAttempt(String ip);
+	static void onTelnetReceived(String command);
 	
 }; 	// class myNM
 

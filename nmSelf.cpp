@@ -1,29 +1,20 @@
 //------------------------------------
-// myNMEA2000_mcp.cpp
+// nmSelf.cpp
 //------------------------------------
+// contains implementation of msgToSelf() and
+// related override of CANGetFrame()
 
+#include "myNM.h"
 #include <myDebug.h>
-#include "myNMEA2000_mcp.h"
 
-#define DEBUG_MYMCP	0
-
-#define COLOR 	"\033[95m"
+#define MSG_TO_SELF_COLOR 	"\033[95m"
 	// 95 = BRIGHT MAGENTA
 
 
-myNMEA2000_mcp::myNMEA2000_mcp(
-		unsigned char cs_pin,
-		unsigned char clock_set /* = MCP_16MHz */,
-        unsigned char int_pin 	/* = 0xff */,
-		uint16_t rx_bufs		/* = MCP_CAN_RX_BUFFER_SIZE */ ) :
-	tNMEA2000_mcp(cs_pin,clock_set,int_pin,rx_bufs)
-{}
-
-
-
-//-------------------------
-// Conversion code
-//-------------------------
+//---------------------------------------
+// Class to copy a message
+//---------------------------------------
+// with method to provide it's canID
 
 extern unsigned long N2ktoCanID(unsigned char priority, unsigned long PGN, unsigned long Source, unsigned char Destination);
 	// From NMEA2000.cpp:
@@ -39,13 +30,13 @@ class copyMsg: public tN2kMsg
 			PGN = 0;
 		}
 
-		void assign(const tN2kMsg &msg, uint8_t dest)
+		void assign(const tN2kMsg &msg, uint8_t dest_addr)
 		{
 			Source 		= msg.Source;
 			Priority 	= msg.Priority;
 			PGN 		= msg.PGN;
 			DataLen 	= msg.DataLen;
-			Destination = dest;
+			Destination = dest_addr;
 			MsgTime 	= msg.MsgTime;
 			ResetData();
 			memcpy(Data,msg.Data,DataLen);
@@ -59,6 +50,11 @@ class copyMsg: public tN2kMsg
 };	 // class copyMsg
 
 
+
+//-------------------------------------------------
+// implementation
+//-------------------------------------------------
+
 static copyMsg pending;
 static volatile bool in_msg;
 static uint8_t num_frames;
@@ -67,16 +63,14 @@ static uint8_t cur_byte;
 static uint8_t frame_counter;
 
 
-void myNMEA2000_mcp::msgToSelf(const tN2kMsg &msg, uint8_t self_addr)
+void myNM::msgToSelf(const tN2kMsg &msg, uint8_t dest_addr)
 {
-	#if DEBUG_MYMCP
-		dbgSerial->print(COLOR);
-		dbgSerial->print("msgToSelf(");
-		dbgSerial->print(msg.PGN);
-		dbgSerial->print(") len=");
-		dbgSerial->print(msg.DataLen);
-		dbgSerial->print("\r\n");
-	#endif
+	if (m_DEBUG_SELF)
+		display_color(MSG_TO_SELF_COLOR,0,
+			"msgToSelf(%d) addr(%d) len=%d",
+			msg.PGN,
+			dest_addr,
+			msg.DataLen);
 
 	if (pending.PGN)
 	{
@@ -93,7 +87,7 @@ void myNMEA2000_mcp::msgToSelf(const tN2kMsg &msg, uint8_t self_addr)
 	cur_byte = 0;
 	cur_frame = 0;
 	num_frames = 0;
-	pending.assign(msg,self_addr);
+	pending.assign(msg,dest_addr);
 	in_msg = 0;
 
 	ParseMessages();
@@ -105,13 +99,13 @@ void myNMEA2000_mcp::msgToSelf(const tN2kMsg &msg, uint8_t self_addr)
 // overriden CANGetFrame() method
 //-----------------------------------
 
-bool myNMEA2000_mcp::CANGetFrame(unsigned long &id, unsigned char &len, unsigned char *buf)	// override;
+bool myNM::CANGetFrame(unsigned long &id, unsigned char &len, unsigned char *buf)	// override;
 {
 	if (pending.PGN)
 	{
 		id = pending.canId();
 		int write = 0;
-		
+
 		if (num_frames)	// send next 7 bytes
 		{
 			write = (pending.DataLen - cur_byte) > 7 ? 7 :
@@ -126,21 +120,14 @@ bool myNMEA2000_mcp::CANGetFrame(unsigned long &id, unsigned char &len, unsigned
 				buf[i+1] = 0xff;
 			}
 
-			#if DEBUG_MYMCP
-				dbgSerial->print(COLOR);
-				dbgSerial->print("    CANGetFrame(");
-				dbgSerial->print(frame_counter);
-				dbgSerial->print(") ");
-				dbgSerial->print(cur_frame);
-				dbgSerial->print("/");
-				dbgSerial->print(num_frames);
-				dbgSerial->print(" frames PGN(");
-				dbgSerial->print(pending.PGN);
-				dbgSerial->print(") cur_byte=");
-				dbgSerial->print(cur_byte);
-				dbgSerial->print("\r\n");
-			#endif
-
+			if (m_DEBUG_SELF)
+				display_color(MSG_TO_SELF_COLOR,0,
+					"    CANGetFrame(%d) %d/%d PGN(%d) cur_byte=%d",
+					frame_counter,
+					cur_frame,
+					num_frames,
+					pending.PGN,
+					cur_byte);
 		}
 		else if (pending.DataLen<=8 && !IsFastPacket(pending))
 		{
@@ -148,14 +135,11 @@ bool myNMEA2000_mcp::CANGetFrame(unsigned long &id, unsigned char &len, unsigned
 			write = len = pending.DataLen;
 			memcpy(buf,pending.Data,len);
 
-			#if DEBUG_MYMCP
-				dbgSerial->print(COLOR);
-				dbgSerial->print("    CANGetFrame single frame PGN(");
-				dbgSerial->print(pending.PGN);
-				dbgSerial->print(") len=");
-				dbgSerial->print(len);
-				dbgSerial->print("\r\n");
-			#endif
+			if (m_DEBUG_SELF)
+				display_color(MSG_TO_SELF_COLOR,0,
+					"    CANGetFrame single frame PGN(%d) len=%d",
+					pending.PGN,
+					len);
 		}
 		else // send 0th frame of 6 bytes
 		{
@@ -170,28 +154,21 @@ bool myNMEA2000_mcp::CANGetFrame(unsigned long &id, unsigned char &len, unsigned
 			buf[1] = pending.DataLen;
 			memcpy(&buf[2],pending.Data,write);
 
-			#if DEBUG_MYMCP
-				dbgSerial->print(COLOR);
-				dbgSerial->print("    CANGetFrame(");
-				dbgSerial->print(frame_counter);
-				dbgSerial->print(") zero/");
-				dbgSerial->print(num_frames);
-				dbgSerial->print(" frame PGN(");
-				dbgSerial->print(pending.PGN);
-				dbgSerial->print(") DataLen=");
-				dbgSerial->print(pending.DataLen);
-				dbgSerial->print("\r\n");
-			#endif
+			if (m_DEBUG_SELF)
+				display_color(MSG_TO_SELF_COLOR,0,
+					"    CANGetFrame(%d) zero/%d PGN(%d) DataLen=%d",
+					frame_counter,
+					num_frames,
+					pending.PGN,
+					pending.DataLen);
 		}
 
 		cur_frame++;
 		cur_byte += write;
 		if (cur_frame >= num_frames)
 		{
-			#if DEBUG_MYMCP
-				dbgSerial->print(COLOR);
-				dbgSerial->print("    CANGetFrame DONE\r\n");
-			#endif
+			if (m_DEBUG_SELF)
+				display_color(MSG_TO_SELF_COLOR,0,"    CANGetFrame DONE",0);
 			frame_counter++;
 			pending.PGN = 0; 	// done
 		}
@@ -199,8 +176,8 @@ bool myNMEA2000_mcp::CANGetFrame(unsigned long &id, unsigned char &len, unsigned
 	}
 
 	// default behavior: call base class
-	
-	return tNMEA2000_mcp::CANGetFrame(id,len,buf);
+
+	return NMEA2000_CLASS::CANGetFrame(id,len,buf);
 
 }
 

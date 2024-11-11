@@ -10,15 +10,17 @@
 
 #define dbg_mon			0		// general debugging
 #define dbg_sensors		0		// show sensor readings
-#define dbg_actisense	0		// debug old actisense stuff
 
 
-#define DEBUG_BUS		0		// show unhandled bus messages in white
+bool myNM::m_DEBUG_BUS = DEFAULT_DEBUG_BUS;
+bool myNM::m_DEBUG_SELF = DEFAULT_DEBUG_SELF;
+bool myNM::m_DEBUG_ACTISENSE = DEFAULT_DEBUG_ACTISENSE;
 
-#define DBG_ACTISENSE 	0		// show actisense stuff in cyan
 
-#define ACOLOR "\033[96m"
+#define ACTI_COLOR "\033[96m"
 	// 96 = BRIGHT CYAN
+#define BUS_COLOR "\033[37m"
+	// 37 = WHITE
 
 
 #if USE_HSPI
@@ -53,6 +55,36 @@
 		0};
 #endif
 
+
+
+
+String myNM::msgToString(const tN2kMsg &msg,  const char *prefix/*=0*/, bool with_data /* =true */)
+{
+	String rslt;
+	if (prefix) rslt += prefix;
+	rslt += String(N2kMillis());
+	rslt += " : ";
+	rslt += "Pri: ";
+	rslt += String(msg.Priority);
+	rslt += " PGN: ";
+	rslt += String(msg.PGN);
+	rslt += " Source: ";
+	rslt += String(msg.Source);
+	rslt += " Dest: ";
+	rslt += String(msg.Destination);
+	rslt += " Len: ";
+	rslt += String(msg.DataLen);
+	if (with_data)
+	{
+		rslt += " Data:";
+		for (int i=0; i<msg.DataLen; i++)
+		{
+			if (i) rslt += ",";
+			rslt += String(msg.Data[i],HEX);
+		}
+  }
+  return rslt;
+}
 
 
 void myNM::setup(
@@ -165,6 +197,7 @@ void myNM::setup(
 
 	if (with_device_list)
 	{
+		display(dbg_mon,"creating deviceList",0);
 		m_device_list = new tN2kDeviceList(this);
 		if (add_self_to_device_list)
 			addSelfToDeviceList();
@@ -185,12 +218,12 @@ void myNM::setup(
 
 	if (with_actisense)
 	{
+		display(dbg_mon,"creating actisenseReader",0);
 		m_actisense_reader = new tActisenseReader();
 		m_actisense_reader->SetReadStream(&Serial2);
 		m_actisense_reader->SetDefaultSource(75);
 		m_actisense_reader->SetMsgHandler(onActisenseMessage);
 	}
-
 
 	proc_leave();
 	display(dbg_mon,"myNM::setup() finished",0);
@@ -289,10 +322,8 @@ void myNM::handleSerialChar(uint8_t byte, bool telnet)
 // static
 void myNM::onActisenseMessage(const tN2kMsg &msg)
 {
-	#if DBG_ACTISENSE
-		Serial.print(ACOLOR "ACTI: ");
-		msg.Print(&Serial);
-	#endif
+	if (m_DEBUG_ACTISENSE)
+		display_string(ACTI_COLOR,0,msgToString(msg,"ACTI: ").c_str());
 
 	// forward broadcast(255) and non-self messages to bus
 
@@ -307,11 +338,7 @@ void myNM::onActisenseMessage(const tN2kMsg &msg)
 	if (msg.Destination == 255 ||
 		msg.Destination == MONITOR_NMEA_ADDRESS)
 	{
-		#if USE_MY_MCP_CLASS	// mainline, best, way to do this
-
-			#if DBG_ACTISENSE
-				Serial.print(ACOLOR "    ACTISENSE calling msgToSelf()\r\n");
-			#endif
+		#if 1	// GOOD CODE
 
 			// Handles all teated NMEA2000 message,
 			// including SYSTEM and INFO message
@@ -319,9 +346,12 @@ void myNM::onActisenseMessage(const tN2kMsg &msg)
 
 			my_nm.msgToSelf(msg,MONITOR_NMEA_ADDRESS);
 
-		#else	// bad old way of doing this
+		#else	// BAD OLD CODE
 
-			display(dbg_actisense,"    handling PGN(%d) to self(%d)",msg.PGN,MONITOR_NMEA_ADDRESS);
+			#define dbg_actisense	0		// debug old actisense stuff
+
+			display_color(ACTI_COLOR,dbg_actisense,
+				"    handling PGN(%d) to self(%d)",msg.PGN,MONITOR_NMEA_ADDRESS);
 
 			// ONLY handles certain PGN_REQUESTS
 			// DOES NOT handle incoming SYSTEM message like product and config INFO message
@@ -332,7 +362,8 @@ void myNM::onActisenseMessage(const tN2kMsg &msg)
 				unsigned long requested_pgn;
 				if (ParseN2kPGN59904(msg, requested_pgn))
 				{
-					display(dbg_actisense,"    requested_pgn=%d",requested_pgn);
+					display_color(ACTI_COLOR,dbg_actisense,
+						"    requested_pgn=%d",requested_pgn);
 					switch (requested_pgn)
 					{
 						case PGN_ADDRESS_CLAIM:
@@ -354,11 +385,9 @@ void myNM::onActisenseMessage(const tN2kMsg &msg)
 					my_error("Error parsing PGN(%d)",msg.PGN);
 			}
 
-		#endif	// bad old way
+		#endif	// BAD OLD CODE
 	}
 }	// onActisenseMessage()
-
-
 
 
 
@@ -435,12 +464,9 @@ void myNM::onBusMessage(const tN2kMsg &msg)
 
 	// show unhandled messages as BUS: in white
 
-	if (!msg_handled)
+	if (!msg_handled && m_DEBUG_BUS)
 	{
-		#if DEBUG_BUS
-			Serial.print("BUS: ");
-			msg.Print(&Serial);
-		#endif
+		display_string(BUS_COLOR,0,msgToString(msg,"BUS: ").c_str());
 	}
 
 }	// onBusMessage()

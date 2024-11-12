@@ -143,11 +143,14 @@ public:
 	static String msgToString(const tN2kMsg &msg, const char *prefix=0, bool with_data=true);
 		// prefix may be 0, used to identify source of message for display purposes
 		// will be prepended to string if provided
+	static String getCommandUsage();
 
 	static bool m_DEBUG_BUS;
 	static bool m_DEBUG_SELF;
 	static bool m_DEBUG_ACTISENSE;
 	static bool m_DEBUG_SENSORS;
+
+
 	
 
 protected:
@@ -189,6 +192,8 @@ protected:
 	// telnet implementation in nmTelnet.cpp
 
 	void initTelnet();
+	static void telnetTask(void *param);
+
 	static void onTelnetConnect(String ip);
 	static void onTelnetDisconnect(String ip);
 	static void onTelnetReconnect(String ip);

@@ -9,6 +9,7 @@
 #include <N2kMessagesEnumToStr.h>
 
 #define dbg_mon			0		// general debugging
+#define dbg_command 	0
 
 bool myNM::m_DEBUG_BUS = DEFAULT_DEBUG_BUS;
 bool myNM::m_DEBUG_SELF = DEFAULT_DEBUG_SELF;
@@ -96,7 +97,6 @@ void myNM::setup(
 {
 	m_broadcase_nmea_info = broadcast_nmea_info;
 
-	display(dbg_mon,"myNM::setup() started",0);
 	proc_entry();
 
 	if (with_oled)
@@ -227,6 +227,9 @@ void myNM::setup(
 	proc_leave();
 	display(dbg_mon,"myNM::setup() finished",0);
 
+	display(dbg_mon,"myNM::setup() started",0);
+	Serial.print(getCommandUsage().c_str());
+
 }	// myNM::setup()
 
 
@@ -279,11 +282,69 @@ void myNM::broadcastNMEA2000Info()
 
 
 
+
+String myNM::getCommandUsage()
+{
+	String rslt = "Usage:\r\n";
+	rslt += "    ? == Show this Help Message\r\n";
+	rslt += "    l == List Devices\r\n";
+	rslt += "    a == toggle DEBUG_ACTISENSE cur=";
+	rslt += String(m_DEBUG_ACTISENSE);
+	rslt += "\r\n";
+	rslt += "    b == toggle DEBUG_BUS cur=";
+	rslt += String(m_DEBUG_BUS);
+	rslt += "\r\n";
+	rslt += "    c == toggle DEBUG_SENSORS cur=";
+	rslt += String(m_DEBUG_SENSORS);
+	rslt += "\r\n";
+	rslt += "    s == toggle DEBUG_SELF cur=";
+	rslt += String(m_DEBUG_SELF);
+	rslt += "\r\n";
+	rslt += "    i == Send out Product Information\r\n";
+	rslt += "    a == Send out PGN_REQUEST for Product Information\r\n";
+	rslt += "    m == Show Memory Usage\r\n";
+	rslt += "    x! = Reboot\r\n";
+	return rslt;
+}
+
+
+
 void myNM::handleSerialChar(uint8_t byte, bool telnet)
 {
-	if (byte == 'q')
+	static uint8_t pending_command;
+
+	if (byte == '!')
 	{
-		display(dbg_mon,"Sending PGN_REQUEST(PGN_PRODUCT_INFO) message",0);
+		if (pending_command == 'x')
+		{
+			warning(0,"REBOOTING !!!",0);
+			vTaskDelay(500 / portTICK_PERIOD_MS);
+			ESP.restart();
+			while (1) {}
+		}
+		else
+		{
+			warning(dbg_command,"unhandled exclamation pending='%c'",
+				pending_command > 32 ? pending_command : ' ');
+		}
+	}
+	else if (pending_command)
+	{
+		warning(dbg_command,"Canceling pending '%c' command",
+			pending_command > 32 ? pending_command : ' ');
+		pending_command = 0;
+	}
+
+	if (byte == '?')
+	{
+		if (telnet)
+			extraSerial->print(getCommandUsage().c_str());
+		else
+			dbgSerial->print(getCommandUsage().c_str());
+	}
+	else if (byte == 'q')
+	{
+		display(dbg_command,"Sending PGN_REQUEST(PGN_PRODUCT_INFO) message",0);
 		tN2kMsg msg;
 		SetN2kPGN59904(msg, 255, PGN_PRODUCT_INFO);
 		SendMsg(msg, 0);
@@ -291,22 +352,55 @@ void myNM::handleSerialChar(uint8_t byte, bool telnet)
 	}
 	else if (byte == 'i')
 	{
-		display(dbg_mon,"calling SendProductInformation()",0);
+		display(dbg_command,"calling SendProductInformation()",0);
 		SendProductInformation();
 	}
 	else if (byte == 'l')
 	{
 		if (m_device_list)
 		{
-			display(dbg_mon,"calling listDevices()",0);
+			display(dbg_command,"calling listDevices()",0);
 			listDevices();
 		}
 		else
 			my_error("NO DEVICE LIST!!",0);
 	}
+
+	else if (byte == 'a')
+	{
+		m_DEBUG_ACTISENSE = !m_DEBUG_ACTISENSE;
+		display(dbg_command,"DEBUG_ACTISENSE=%d",m_DEBUG_ACTISENSE);
+	}
+	else if (byte == 'b')
+	{
+		m_DEBUG_BUS = !m_DEBUG_BUS;
+		display(dbg_command,"DEBUG_BUS=%d",m_DEBUG_BUS);
+	}
+	else if (byte == 's')
+	{
+		m_DEBUG_SELF = !m_DEBUG_SELF;
+		display(dbg_command,"DEBUG_SELF=%d",m_DEBUG_SELF);
+	}
+	else if (byte == 'c')
+	{
+		m_DEBUG_SENSORS = !m_DEBUG_SENSORS;
+		display(dbg_command,"DEBUG_SENSORS=%d",m_DEBUG_SENSORS);
+	}
+	else if (byte == 'm')
+	{
+		uint32_t mem_free = xPortGetFreeHeapSize() / 1024;
+		uint32_t mem_min = xPortGetMinimumEverFreeHeapSize() / 1024;
+		display(0,"MEMORY Free: %d KB   Min: %d KB",mem_free,mem_min);
+	}
+	else if (byte == 'x')
+	{
+		warning(0,"PRESS '!' to Confirm Reboot!!!",0);
+		pending_command = 'x';
+	}
+
 	else
 	{
-		warning(0,"unhandled serial char(0x%02x)='%c'",byte,byte>=32?byte:' ');
+		warning(dbg_command,"unhandled serial char(0x%02x)='%c'",byte,byte>=32?byte:' ');
 	}
 }
 
@@ -500,6 +594,11 @@ void myNM::loop()
 	if (m_actisense_reader)
 		m_actisense_reader->ParseMessages();
 
+	// These probably get moved to a task too ..
+	// so the only thing in the loop are NMEA message things
+	// or, THEY get moved to a task ... and then don't need
+	// a separate task for telnet/wifi?
+	
 	if (Serial.available())
 	{
 		uint8_t byte = Serial.read();
@@ -508,14 +607,16 @@ void myNM::loop()
 	if (extraSerial && extraSerial->available())
 	{
 		uint8_t byte = extraSerial->read();
-		if (byte)	// console.pm sends out 0 every 10 seconds as heartbeat
+		if (byte)	// console.pm sends out 0 every 3 seconds !!!
 			handleSerialChar(byte,true);
 	}
 
-	#if (!USE_MY_ESP_TELNET)
-		if (m_telnet)
-			m_telnet->loop();
+	// in a busy loop, there is no time for telnet to connect?
+	
+	#if 0	// bad idea in time critical loop
+		delay(2);
 	#endif
+
 }
 
 

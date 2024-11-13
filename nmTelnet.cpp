@@ -21,7 +21,7 @@
 #define USE_SSID	apartment_ssid
 #define USE_PASS	private_pass
 
-#define CHECK_WIFI_TIME			60000
+#define WIFI_STATS_INTERVAL		60000
 #define CONNECT_TIMEOUT			10000
 #define DISCONNECT_TIMEOUT		10000
 #define SHORT_TRY_ATTEMPTS		10
@@ -30,12 +30,17 @@
 
 
 static volatile bool g_wifi_connected;
-static uint32_t g_connect_try_count;
-static uint32_t g_connect_count;
-static uint32_t g_connect_fail_count;
-static uint32_t g_connect_delay;
-static uint32_t g_connect_fail_time;
-static uint32_t g_last_wifi_check;
+static uint32_t g_wifi_delay;
+static uint32_t g_wifi_fail_time;
+static uint32_t g_wifi_stats_time;
+
+static uint32_t g_wifi_try_count;
+static uint32_t g_wifi_connect_count;
+static uint32_t g_wifi_fail_count;
+
+static uint32_t g_telnet_connect_count;
+static uint32_t g_telnet_disconnect_count;
+static uint32_t g_telnet_reconnect_count;
 
 
 //---------------------------------
@@ -45,12 +50,12 @@ static uint32_t g_last_wifi_check;
 static void connectWifi()
 {
 	g_wifi_connected = false;
-	g_connect_try_count++;
-	g_connect_delay = 0;
-	g_connect_fail_time = 0;
+	g_wifi_try_count++;
+	g_wifi_delay = 0;
+	g_wifi_fail_time = 0;
 
 	display(dbg_wifi,"Connecting try(%d) to %s",
-		g_connect_try_count,
+		g_wifi_try_count,
 		USE_SSID);
 	proc_entry();
 
@@ -110,34 +115,34 @@ static void connectWifi()
 	if (WiFi.status() == WL_CONNECTED)
 	{
 		g_wifi_connected = true;
-		g_connect_count++;
-		g_connect_try_count = 0;
+		g_wifi_connect_count++;
+		g_wifi_try_count = 0;
 
 		String ip = WiFi.localIP().toString();
 		display(dbg_wifi,"Connected(%d) to %s at %s",
-			g_connect_count,
+			g_wifi_connect_count,
 			USE_SSID,
 			ip.c_str());
 	}
 	else
 	{
-		g_connect_fail_count++;
-		if (g_connect_try_count > SHORT_TRY_ATTEMPTS)
-			g_connect_delay = RECONNECT_DELAY_LONG;
+		g_wifi_fail_count++;
+		if (g_wifi_try_count > SHORT_TRY_ATTEMPTS)
+			g_wifi_delay = RECONNECT_DELAY_LONG;
 		else
-			g_connect_delay = RECONNECT_DELAY_SHORT;
-		g_connect_fail_time = millis();
+			g_wifi_delay = RECONNECT_DELAY_SHORT;
+		g_wifi_fail_time = millis();
 
 		warning(0,"Could not Connect(%d) to %s (retry in %d seconds)",
-			g_connect_try_count,
+			g_wifi_try_count,
 			USE_SSID,
-			g_connect_delay / 1000);
+			g_wifi_delay / 1000);
 	}
 
 	display(dbg_wifi,"total tries(%d) success(%d) fails(%d)",
-		g_connect_count + g_connect_fail_count,
-		g_connect_count,
-		g_connect_fail_count);
+		g_wifi_connect_count + g_wifi_fail_count,
+		g_wifi_connect_count,
+		g_wifi_fail_count);
 
 	proc_leave();
 }
@@ -155,13 +160,14 @@ void myNM::onTelnetConnect(String ip)
 	extraSerial = my_nm.m_telnet;
 	my_nm.m_telnet->println("Welcome to the NMEA Monitor");
 	my_nm.m_telnet->print(getCommandUsage().c_str());
-
+	g_telnet_connect_count++;
 }
 
 void myNM::onTelnetDisconnect(String ip)
 {
 	extraSerial = 0;
 	warning(dbg_telnet,"Telnet disconnect",0);
+	g_telnet_disconnect_count++;
 }
 
 void myNM::onTelnetReconnect(String ip)
@@ -169,6 +175,7 @@ void myNM::onTelnetReconnect(String ip)
 	warning(dbg_telnet,"Telnet reconnected from %s",ip.c_str());
 	extraSerial = my_nm.m_telnet;
 	my_nm.m_telnet->println("Welcome back to the NMEA Monitor");
+	g_telnet_reconnect_count++;
 }
 
 void myNM::onTelnetConnectionAttempt(String ip)
@@ -249,10 +256,10 @@ void myNM::telnetTask(void *telnet_ptr)
 			#endif
 		}
 
-		if (g_connect_delay &&
-			now - g_connect_fail_time >= g_connect_delay)
+		if (g_wifi_delay &&
+			now - g_wifi_fail_time >= g_wifi_delay)
 		{
-			g_connect_delay = 0;
+			g_wifi_delay = 0;
 			warning(dbg_wifi,"calling connectWifi() from telnetTask()",0);
 			connectWifi();
 			if (g_wifi_connected)
@@ -263,25 +270,37 @@ void myNM::telnetTask(void *telnet_ptr)
 		}
 		else if (
 			g_wifi_connected &&
-			!g_connect_delay &&
+			!g_wifi_delay &&
 			WiFi.status() != WL_CONNECTED)
 		{
-			g_connect_delay = RECONNECT_DELAY_SHORT;
-			g_connect_fail_time = now;
-			warning(dbg_wifi,"Wifi connection lost in telnetTask() .. reconnecting in %d seconds",g_connect_delay/1000);
+			g_wifi_delay = RECONNECT_DELAY_SHORT;
+			g_wifi_fail_time = now;
+			warning(dbg_wifi,"Wifi connection lost in telnetTask() .. reconnecting in %d seconds",g_wifi_delay/1000);
 			display(dbg_telnet,"stopping telnet from telnetTask()",0);
 			extraSerial = 0;
 			telnet->stop();
 		}
 
-		if (now - g_last_wifi_check > CHECK_WIFI_TIME)
+		if (now - g_wifi_stats_time > WIFI_STATS_INTERVAL)
 		{
-			g_last_wifi_check = now;
+			g_wifi_stats_time = now;
 			display(dbg_wifi,"WIFI check %s cur_try(%d) successes(%d) fails(%d)",
 				g_wifi_connected ? "CONNECTED" : "NOT CONNECTED",
-				g_connect_try_count,
-				g_connect_count,
-				g_connect_fail_count);
+				g_wifi_try_count,
+				g_wifi_connect_count,
+				g_wifi_fail_count);
+			display(dbg_telnet,"   TELNET connects(%d) disconnects(%d) reconnects(%d)",
+				g_telnet_connect_count,
+				g_telnet_disconnect_count,
+				g_telnet_reconnect_count);
+			#if USE_MY_ESP_TELNET
+				display(dbg_telnet,"   MY_TELNET miss(%d) err(%d) warn(%d) over(%d) wait(%d)",
+					my_nm.m_telnet->m_num_missed,
+					my_nm.m_telnet->m_num_error,
+					my_nm.m_telnet->m_num_warning,
+					my_nm.m_telnet->m_num_overflow,
+					my_nm.m_telnet->m_num_wait);
+			#endif
 		}
 	}
 }

@@ -301,7 +301,7 @@ String myNM::getCommandUsage()
 	rslt += String(m_DEBUG_SELF);
 	rslt += "\r\n";
 	rslt += "    i == Send out Product Information\r\n";
-	rslt += "    a == Send out PGN_REQUEST for Product Information\r\n";
+	rslt += "    q == Send out PGN_REQUEST for Product Information\r\n";
 	rslt += "    m == Show Memory Usage\r\n";
 	rslt += "    x! = Reboot\r\n";
 	return rslt;

@@ -12,13 +12,9 @@
 #define dbg_command 	0
 
 bool myNM::m_DEBUG_BUS = DEFAULT_DEBUG_BUS;
-bool myNM::m_DEBUG_SELF = DEFAULT_DEBUG_SELF;
-bool myNM::m_DEBUG_ACTISENSE = DEFAULT_DEBUG_ACTISENSE;
 bool myNM::m_DEBUG_SENSORS = DEFAULT_DEBUG_SENSORS;
 
 
-#define ACTI_COLOR "\033[96m"
-	// 96 = BRIGHT CYAN
 #define BUS_COLOR "\033[37m"
 	// 37 = WHITE
 
@@ -88,9 +84,6 @@ String myNM::msgToString(const tN2kMsg &msg,  const char *prefix/*=0*/, bool wit
 
 
 void myNM::setup(
-	bool with_actisense			 /* = DEFAULT_WITH_ACTISENSE */,
-	bool with_oled 				 /* = DEFAULT_WITH_OLED */,
-	bool with_telnet 			 /* = DEFAULT_WITH_TELNET */,
 	bool with_device_list 		 /* = DEFAULT_WITH_DEVICE_LIST */,
 	bool add_self_to_device_list /* = DEFAULT_ADD_SELF_TO_DEVICE_LIST */,
 	bool broadcast_nmea_info 	 /* = DEFAULT_BROADCAST_NMEA200_INFO */ )
@@ -98,15 +91,6 @@ void myNM::setup(
 	m_broadcase_nmea_info = broadcast_nmea_info;
 
 	proc_entry();
-
-	if (with_oled)
-		initOled();
-
-	if (with_actisense)
-		Serial2.begin(115200);
-
-	if (with_telnet)
-		initTelnet();
 
 	//--------------------------------------
 	// nmea setup
@@ -161,23 +145,13 @@ void myNM::setup(
 	// "read/write streams are the same, so dont forward own messages", so
 	// I keep playing with true/false in both forwards
 
-
-	if (with_actisense)
-	{
-		SetForwardStream(&Serial2);
-		SetForwardType(tNMEA2000::fwdt_Actisense);
+	#if 0
+		SetForwardType(tNMEA2000::fwdt_Text); 	// Show bus data in clear text
+		SetForwardStream(&Serial);
 		SetForwardOwnMessages(true);
-	}
-	else
-	{
-		#if 0
-			SetForwardType(tNMEA2000::fwdt_Text); 	// Show bus data in clear text
-			SetForwardStream(&Serial);
-			SetForwardOwnMessages(true);
-		#else
-			EnableForward(false);
-		#endif
-	}
+	#else
+		EnableForward(false);
+	#endif
 
 
 	#if 0
@@ -210,19 +184,6 @@ void myNM::setup(
 	if (!ok)
 		my_error("NMEA2000::Open() failed",0);
 
-
-	// setup the actisense Reader
-	// Note that it has it's own "default source" 75,
-	// which is different than this device's address 99.
-
-	if (with_actisense)
-	{
-		display(dbg_mon,"creating actisenseReader",0);
-		m_actisense_reader = new tActisenseReader();
-		m_actisense_reader->SetReadStream(&Serial2);
-		m_actisense_reader->SetDefaultSource(75);
-		m_actisense_reader->SetMsgHandler(onActisenseMessage);
-	}
 
 	proc_leave();
 	display(dbg_mon,"myNM::setup() finished",0);
@@ -288,17 +249,11 @@ String myNM::getCommandUsage()
 	String rslt = "Usage:\r\n";
 	rslt += "    ? == Show this Help Message\r\n";
 	rslt += "    l == List Devices\r\n";
-	rslt += "    a == toggle DEBUG_ACTISENSE cur=";
-	rslt += String(m_DEBUG_ACTISENSE);
-	rslt += "\r\n";
 	rslt += "    b == toggle DEBUG_BUS cur=";
 	rslt += String(m_DEBUG_BUS);
 	rslt += "\r\n";
 	rslt += "    c == toggle DEBUG_SENSORS cur=";
 	rslt += String(m_DEBUG_SENSORS);
-	rslt += "\r\n";
-	rslt += "    s == toggle DEBUG_SELF cur=";
-	rslt += String(m_DEBUG_SELF);
 	rslt += "\r\n";
 	rslt += "    i == Send out Product Information\r\n";
 	rslt += "    q == Send out PGN_REQUEST for Product Information\r\n";
@@ -366,20 +321,10 @@ void myNM::handleSerialChar(uint8_t byte, bool telnet)
 			my_error("NO DEVICE LIST!!",0);
 	}
 
-	else if (byte == 'a')
-	{
-		m_DEBUG_ACTISENSE = !m_DEBUG_ACTISENSE;
-		display(dbg_command,"DEBUG_ACTISENSE=%d",m_DEBUG_ACTISENSE);
-	}
 	else if (byte == 'b')
 	{
 		m_DEBUG_BUS = !m_DEBUG_BUS;
 		display(dbg_command,"DEBUG_BUS=%d",m_DEBUG_BUS);
-	}
-	else if (byte == 's')
-	{
-		m_DEBUG_SELF = !m_DEBUG_SELF;
-		display(dbg_command,"DEBUG_SELF=%d",m_DEBUG_SELF);
 	}
 	else if (byte == 'c')
 	{
@@ -403,84 +348,6 @@ void myNM::handleSerialChar(uint8_t byte, bool telnet)
 		warning(dbg_command,"unhandled serial char(0x%02x)='%c'",byte,byte>=32?byte:' ');
 	}
 }
-
-
-//----------------------------
-// onActisenseMessage
-//----------------------------
-// I want to start letting debugging be configured
-// at runtime with settings saved to NVS.  Much
-// work will be needed going forward.
-
-// static
-void myNM::onActisenseMessage(const tN2kMsg &msg)
-{
-	if (m_DEBUG_ACTISENSE)
-		display_string(ACTI_COLOR,0,msgToString(msg,"ACTI: ").c_str());
-
-	// forward broadcast(255) and non-self messages to bus
-
-	if (msg.Destination == 255 ||
-		msg.Destination != MONITOR_NMEA_ADDRESS)
-	{
-		my_nm.SendMsg(msg,-1);
-	}
-
-	// handle broadcast and self messages
-
-	if (msg.Destination == 255 ||
-		msg.Destination == MONITOR_NMEA_ADDRESS)
-	{
-		#if 1	// GOOD CODE
-
-			// Handles all teated NMEA2000 message,
-			// including SYSTEM and INFO message
-			// So this DOES support the deviceList enumearing NMEA_Simulator devices
-
-			my_nm.msgToSelf(msg,MONITOR_NMEA_ADDRESS);
-
-		#else	// BAD OLD CODE
-
-			#define dbg_actisense	0		// debug old actisense stuff
-
-			display_color(ACTI_COLOR,dbg_actisense,
-				"    handling PGN(%d) to self(%d)",msg.PGN,MONITOR_NMEA_ADDRESS);
-
-			// ONLY handles certain PGN_REQUESTS
-			// DOES NOT handle incoming SYSTEM message like product and config INFO message
-			// SO this code DOES NOT support the deviceList enumerating NMEA_Simulator devices
-
-			if (msg.PGN == PGN_REQUEST)		// PGN_REQUEST == 59904L
-			{
-				unsigned long requested_pgn;
-				if (ParseN2kPGN59904(msg, requested_pgn))
-				{
-					display_color(ACTI_COLOR,dbg_actisense,
-						"    requested_pgn=%d",requested_pgn);
-					switch (requested_pgn)
-					{
-						case PGN_ADDRESS_CLAIM:
-							my_nm.SendIsoAddressClaim();
-							break;
-						case PGN_PRODUCT_INFO:
-							my_nm.SendProductInformation();
-							break;
-						case PGN_DEVICE_CONFIG:
-							my_nm.SendConfigurationInformation();
-							break;
-						case PGN_PGN_LIST:
-							my_nm.SendTxPGNList(msg.Source,0);	// 0 == iDev);
-							my_nm.SendRxPGNList(msg.Source,0);	// 0 == iDev);
-							break;
-					}
-				}
-				else
-					my_error("Error parsing PGN(%d)",msg.PGN);
-			}
-
-		#endif	// BAD OLD CODE
-	}
-}	// onActisenseMessage()
 
 
 
@@ -571,8 +438,6 @@ void myNM::onBusMessage(const tN2kMsg &msg)
 
 
 
-
-
 //-----------------------------------
 // loop()
 //-----------------------------------
@@ -591,8 +456,6 @@ void myNM::loop()
 		broadcastNMEA2000Info();
 
 	ParseMessages();
-	if (m_actisense_reader)
-		m_actisense_reader->ParseMessages();
 
 	// These probably get moved to a task too ..
 	// so the only thing in the loop are NMEA message things
@@ -604,15 +467,7 @@ void myNM::loop()
 		uint8_t byte = Serial.read();
 		handleSerialChar(byte,false);
 	}
-	if (extraSerial && extraSerial->available())
-	{
-		uint8_t byte = extraSerial->read();
-		if (byte)	// console.pm sends out 0 every 3 seconds !!!
-			handleSerialChar(byte,true);
-	}
 
-	// in a busy loop, there is no time for telnet to connect?
-	
 	#if 0	// bad idea in time critical loop
 		delay(2);
 	#endif

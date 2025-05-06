@@ -237,7 +237,7 @@ Which then goes on to explain that you will need to install additional libraries
 and coordinate them with the setting of USE_N2K_CAN.
 
 As if you are going to write a program then arbitrarily switch back and forth
-betwene a 16K 16Mhz Arduino and a dual core 240Mhz ESP32 with Wifi and BT.
+between a 16K 16Mhz Arduino and a dual core 240Mhz ESP32 with Wifi and BT.
 
 LOLOL, sigh.
 
@@ -474,7 +474,7 @@ Whew.  OK, I understand. There are hundreds of PGNa and 4 methods for each.
 
 So far, all of the beginner's tutorial documentation I could find was basically
 presented in a few lines of sparse text in one of Timo's documents.  Then we *merely*
-install this app (proprietary 3rd party app), set afew variables, and we should
+install this app (proprietary 3rd party app), set a few variables, and we should
 see it in the Actisense reader, and I guess everybody can go home at that point.
 
 That's basically where Timo's "tutorial" and any kind of overview documentation, end.
@@ -487,10 +487,10 @@ Serial port, to the program and showed up on my laptop.
 
 But unfortunately that's where both the documentation and the examples and
 any kind of systemic overview of the concepts and architure of the libraries
-and any applications yu might write simply end, and you are completely on your
+and any applications you might write simply end, and you are completely on your
 own to reverse engineer thousands of lines of code, hundreds of messages,
 dozens of files, multiple libraries, and, once again, underlying it all, a
-completely opaque set of proprietary protocols.
+completely opaque set of proprietary protocols to get to the next level.
 
 
 
@@ -502,8 +502,9 @@ with the tiny ST7789 display as my only debugging output when the USB Serial is 
 mode (its a binary, proprietary protocol - pretty simple wrapper, but no docs anywhere).
 
 I ended up adding **WiFi** and **Telnet** to my ESP32 apps so that I could have an alternative
-Serial port for debugging.  I *could* have used Serial2 on the ESP32 and a SerialUSB converter
-module, but I really don't want more wires and USB cables to my laptop.
+Serial port for debugging.  Those turned out to be a waste of time.  In the end I used a
+used an FT232RL (red) serial module and Serial2 on the ESP32 to communicate debugging
+to the laptop while in "actiSense mode".
 
 
 The story goes like this.
@@ -524,7 +525,7 @@ and that it **never automaticaly sends the Product or Configuration information*
 subsequently, upon startup, or if queried, I can call SendProductInformation() with its default *idx=0"
 to send it to the network.
 
-It looks like when the App **recieves** an address claim it then **requests** product information.
+It looks like when the App **receives** an address claim it then **requests** product information.
 
 I have since been able to receive a PGN_REQUEST(59904) for PGN 60928 - Get Product Information
 and figured out that I need to call SendProductInformation() in response.

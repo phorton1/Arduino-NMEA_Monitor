@@ -71,7 +71,7 @@
 // These are defaults that can subsquently be changed
 // and stored to NVS vis the serial command processor
 
-#define DEFAULT_WITH_ACTISENSE	1
+#define DEFAULT_WITH_ACTISENSE	0
 	// Actisense requirres an FDTI232 adapter on Serial2
 	//`The main Serial port is always used for debugging
 	// output and the serial command processor.
@@ -79,7 +79,7 @@
 #define DEFAULT_WITH_OLED		1
 	// implements ST7789 oled to act as a small system monitor display
 
-#define DEFAULT_WITH_TELNET		1
+#define DEFAULT_WITH_TELNET		0
 	// WIFI is only used to drive TELNET, which is assigned
 	// to myDebug::extraSerial when telnet is connected.
 	// Connects using myPrivate.h credentials, then nstantiates

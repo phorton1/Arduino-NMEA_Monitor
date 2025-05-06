@@ -1,11 +1,24 @@
 //-------------------------------------------
 // NMEA_Monitor.cpp
 //-------------------------------------------
+// Note that the monitor needs DEBUG_RXANY compile flag.
+// Pins to	MCP2515 Canbus module	pin 1 == VBUS
+// IdeaSpark st7789 module
+//
+//		module			ESP32
+//
+//		(1) VCC 	 	(1)  VBUS			red
+// 		(2) GND			(2)  GND			brown
+//		(5) (MO)SI		(3)  GPIO13 (MOSO)  green		alt HSPI
+//		(4) (MI)SO		(4)  GPIO12 (MISO)	yellow		alt HSPI
+//		(6) SCK			(5)  GPIO14 (SCLK)	blue		alt HSPI
+// 		(3) CS			(23) GPIO5	altCS	orange		15 is alt HSP-CS, so 5 (normal SPI CS) is 'alt' for this
+//		(7) INT			nc
 
 #include "myNM.h"
 #include <myDebug.h>
 
-#define dbg_mon 	0
+#define dbg_mon 	1
 
 #define INT_PIN_NONE	0xff
 

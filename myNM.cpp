@@ -18,13 +18,14 @@ bool myNM::m_DEBUG_SENSORS = DEFAULT_DEBUG_SENSORS;
 #define BUS_COLOR "\033[37m"
 	// 37 = WHITE
 
-
+#if USE_NMEA2000_MCP
 #if USE_HSPI
 	SPIClass *hspi;
 		// MOSI=13
 		// MISO=12
 		// SCLK=14
 		// default CS = 15, we use 5
+#endif
 #endif
 
 
@@ -89,7 +90,7 @@ void myNM::setup(
 	bool broadcast_nmea_info 	 /* = DEFAULT_BROADCAST_NMEA200_INFO */ )
 {
 	m_broadcase_nmea_info = broadcast_nmea_info;
-
+	display(dbg_mon,"myNM::setup() started",0);
 	proc_entry();
 
 	//--------------------------------------
@@ -163,9 +164,11 @@ void myNM::setup(
 
 	SetMsgHandler(onBusMessage);
 
+	#if USE_NMEA2000_MCP
 	#if USE_HSPI
 		hspi = new SPIClass(HSPI);
 		SetSPI(hspi);
+	#endif
 	#endif
 
 	if (with_device_list)
@@ -188,7 +191,6 @@ void myNM::setup(
 	proc_leave();
 	display(dbg_mon,"myNM::setup() finished",0);
 
-	display(dbg_mon,"myNM::setup() started",0);
 	Serial.print(getCommandUsage().c_str());
 
 }	// myNM::setup()
@@ -264,7 +266,7 @@ String myNM::getCommandUsage()
 
 
 
-void myNM::handleSerialChar(uint8_t byte, bool telnet)
+void myNM::handleSerialChar(uint8_t byte)
 {
 	static uint8_t pending_command;
 
@@ -292,10 +294,7 @@ void myNM::handleSerialChar(uint8_t byte, bool telnet)
 
 	if (byte == '?')
 	{
-		if (telnet)
-			extraSerial->print(getCommandUsage().c_str());
-		else
-			dbgSerial->print(getCommandUsage().c_str());
+		dbgSerial->print(getCommandUsage().c_str());
 	}
 	else if (byte == 'q')
 	{
@@ -363,6 +362,8 @@ void myNM::onBusMessage(const tN2kMsg &msg)
 	bool msg_handled = false;
 	static uint32_t msg_counter = 0;
 	msg_counter++;
+
+	// display_string(BUS_COLOR,0,msgToString(msg,"BUS: ").c_str());
 
 	if (msg.Destination == 255 ||
 		msg.Destination == MONITOR_NMEA_ADDRESS)
@@ -457,15 +458,11 @@ void myNM::loop()
 
 	ParseMessages();
 
-	// These probably get moved to a task too ..
-	// so the only thing in the loop are NMEA message things
-	// or, THEY get moved to a task ... and then don't need
-	// a separate task for telnet/wifi?
-	
+
 	if (Serial.available())
 	{
 		uint8_t byte = Serial.read();
-		handleSerialChar(byte,false);
+		handleSerialChar(byte);
 	}
 
 	#if 0	// bad idea in time critical loop

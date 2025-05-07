@@ -3,7 +3,21 @@
 //-------------------------------------------
 // Note that the monitor needs DEBUG_RXANY compile flag.
 // Pins to	MCP2515 Canbus module	pin 1 == VBUS
-// IdeaSpark st7789 module
+// Currently wired same as the NMEA_SENSOR, using lregular SPI
+//	   on DEV0_board_with_holes
+// Pins to	MCP2515 Canbus module	pin 1 == VBUS
+//
+//		module			ESP32
+//
+//		(7) INT			GPIO22			orange
+//		(6) SCK			GPIO18 (SCK)	white
+//		(5) (MO)SI		GPIO23 (MOSI)  	yellow
+//		(4) (MI)SO		GPIO19 (MISO)	green
+// 		(3) CS			GPIO5  (CS)		blue
+// 		(2) GND			GND				black
+//		(1) VCC 	 	VBUS			red
+//
+// Previouis IdeaSpark st7789 module
 //
 //		module			ESP32
 //
@@ -18,20 +32,21 @@
 #include "myNM.h"
 #include <myDebug.h>
 
-#define dbg_mon 	1
+#define dbg_mon 	0
 
-#define INT_PIN_NONE	0xff
 
-myNM my_nm(CAN_CS_PIN,MCP_8MHz,INT_PIN_NONE,MCP_CAN_RX_BUFFER_SIZE);
-
+myNM my_nm;
 
 
 void setup()
 {
 	Serial.begin(921600);
-	delay(2000);
+	delay(1000);
 	Serial.println("WTF");
-	display(dbg_mon,"NMEA_Monitor.ino setup() started",0);
+	delay(1000);
+
+	const char *how = USE_NMEA2000_ESP ? "ESP32" : "MCP";
+	display(dbg_mon,"NMEA_Monitor.ino setup(%s) v1.0 started",how);
 	proc_entry();
 	
 	my_nm.setup(

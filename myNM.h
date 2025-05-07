@@ -4,9 +4,21 @@
 
 #pragma once
 
-#define NMEA2000_CLASS	tNMEA2000_mcp
+#define USE_NMEA2000_ESP	0	// use onboard ESP32 canbus peripheral
+#define USE_NMEA2000_MCP	1	// use MCP2515 mcp module
 
-#include <NMEA2000_mcp.h>
+#if USE_NMEA2000_ESP
+	#define USE_NMEA2000_MCP	0
+	#define NMEA2000_CLASS	tNMEA2000_esp32
+	#include <NMEA2000_esp32.h>
+#elif USE_NMEA2000_MCP
+	#define NMEA2000_CLASS	tNMEA2000_mcp
+	#include <NMEA2000_mcp.h>
+#else
+	error NO CANBUS MODULE SPECIFIED
+#endif
+
+
 #include <N2kDeviceList.h>
 
 
@@ -43,15 +55,25 @@
 	// globally defined to spread myNM class implementation
 	// across several cpp files.
 
+#if USE_NMEA2000_ESP
+	#define CAN_TX_PIN 		GPIO_NUM_17
+	#define CAN_RX_PIN		GPIO_NUM_16
+#endif
 
-#define CAN_CS_PIN		5
-	// I use this instead of the default ESP32 CS pin15 because
-	// the default ESP32 CS pin15 is soldered on the ideaspark
-	// board to the ST7789 oled display.
-#define USE_HSPI		1
-	// In addition, I use the ESP32 alternative HSPI for the
-	// mcp2515 so that it isn't mucked with by the st7789 display
-	// which is soldered to the default ESP32 VSPI pins.
+#if USE_NMEA2000_MCP	// uses SPI
+	#define CAN_CS_PIN		5
+		// I use this instead of the default ESP32 CS pin15 because
+		// the default ESP32 CS pin15 is soldered on the ideaspark
+		// board to the ST7789 oled display, and because this is
+		// what I use in the sensor
+	#define INT_PIN			GPIO_NUM_22		// 0xff == none
+		// It works better with the interrupt pin !
+		// Was losing packets in the monitor, then this fixed it
+	#define USE_HSPI		0
+		// I used to use the ESP32 alternative HSPI for the
+		// mcp2515 so that it isn't mucked with by the st7789 display
+		// which is soldered to the default ESP32 VSPI pins.
+#endif
 
 
 //---------------------------------
@@ -89,12 +111,12 @@ class myNM : public NMEA2000_CLASS
 {
 public:
 
-	myNM(
-		unsigned char cs_pin 	= CAN_CS_PIN,
-		unsigned char clock_set = MCP_8MHz,
-        unsigned char int_pin 	= 0xff,
-		uint16_t rx_bufs		= MCP_CAN_RX_BUFFER_SIZE) :
-		NMEA2000_CLASS(cs_pin,clock_set,int_pin,rx_bufs)
+	myNM() :
+#if USE_NMEA2000_ESP
+		NMEA2000_CLASS(CAN_TX_PIN, CAN_RX_PIN)
+#elif USE_NMEA2000_MCP
+		NMEA2000_CLASS(CAN_CS_PIN,MCP_8MHz,INT_PIN,MCP_CAN_RX_BUFFER_SIZE)
+#endif
 	{}
 
 	void setup(
@@ -123,7 +145,7 @@ protected:
 	
 	static void onBusMessage(const tN2kMsg &msg);
 	void broadcastNMEA2000Info();
-	void handleSerialChar(uint8_t byte, bool telnet=false);
+	void handleSerialChar(uint8_t byte);
 
 	void listDevices();
 	void addSelfToDeviceList();

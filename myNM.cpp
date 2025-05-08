@@ -379,7 +379,7 @@ void myNM::onBusMessage(const tN2kMsg &msg)
 			{
 				msg_handled = true;
 				if (m_DEBUG_SENSORS)
-					display(0,"heading(%d) : %0.3f degrees",msg_counter,RadToDeg(d1));
+					display(0,"heading(%d)  : %0.3f degrees",msg_counter,RadToDeg(d1));
 			}
 			else
 				my_error("Parsing PGN_HEADING(128267)",0);
@@ -392,7 +392,7 @@ void myNM::onBusMessage(const tN2kMsg &msg)
 			{
 				msg_handled = true;
 				if (m_DEBUG_SENSORS)
-					display(0,"speed(%d) : %0.3f kts",msg_counter,msToKnots(d1));
+					display(0,"speed(%d)    : %0.3f kts",msg_counter,msToKnots(d1));
 			}
 			else
 				my_error("Parsing PGN_SPEED(128267)",0);
@@ -404,10 +404,23 @@ void myNM::onBusMessage(const tN2kMsg &msg)
 			{
 				msg_handled = true;
 				if (m_DEBUG_SENSORS)
-					display(0,"depth(%d) : %0.3f meters",msg_counter,d1);
+					display(0,"depth(%d)    : %0.3f meters",msg_counter,d1);
 			}
 			else
 				my_error("Parsing PGN_DEPTH(128267)",0);
+		}
+		else if (msg.PGN == PGN_POSITION)
+		{
+			double lat;
+			double lon;
+			if (ParseN2kPGN129025(msg,lat,lon))
+			{
+				msg_handled = true;
+				if (m_DEBUG_SENSORS)
+					display(0,"position(%d) : lat(%0.6f) lon(%0.6f)",msg_counter,lat,lon);
+			}
+			else
+				my_error("Parsing PGN_TEMPERATURE(130316)",0);
 		}
 		else if (msg.PGN == PGN_TEMPERATURE)
 		{
@@ -419,7 +432,7 @@ void myNM::onBusMessage(const tN2kMsg &msg)
 			{
 				msg_handled = true;
 				if (m_DEBUG_SENSORS)
-					display(0,"temp(%d) : %0.3fC",msg_counter,KelvinToC(d1));
+					display(0,"temp(%d)     : %0.3fC",msg_counter,KelvinToC(d1));
 			}
 			else
 				my_error("Parsing PGN_TEMPERATURE(130316)",0);

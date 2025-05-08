@@ -1,7 +1,7 @@
 //-------------------------------------------
 // NMEA_Monitor.cpp
 //-------------------------------------------
-// Note that the monitor needs DEBUG_RXANY compile flag.
+// Note that the MCP2515 monitor needs DEBUG_RXANY compile flag.
 // Pins to	MCP2515 Canbus module	pin 1 == VBUS
 // Currently wired same as the NMEA_SENSOR, using lregular SPI
 //	   on DEV0_board_with_holes

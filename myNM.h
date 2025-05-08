@@ -34,10 +34,11 @@
 #define PGN_PRODUCT_INFO			126996L
 #define PGN_DEVICE_CONFIG			126998L
 
-#define PGN_TEMPERATURE    			130316L
 #define PGN_HEADING					127250L
 #define PGN_SPEED					128259L
 #define PGN_DEPTH					128267L
+#define PGN_POSITION				129025L
+#define PGN_TEMPERATURE    			130316L
 
 // upcoming generator PGNS
 

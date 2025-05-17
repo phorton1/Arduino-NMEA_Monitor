@@ -39,6 +39,9 @@
 #define PGN_DEPTH					128267L
 #define PGN_POSITION				129025L
 #define PGN_TEMPERATURE    			130316L
+#define PGN_ENGINE_RAPID			127488L
+#define PGN_ENGINE_DYNAMIC			127489L
+#define PGN_FLUID_LEVEL				127505L
 
 // upcoming generator PGNS
 
@@ -96,7 +99,7 @@
 	// to make sure that other devices get it even if they are not
 	// requesting it.
 
-#define DEFAULT_DEBUG_BUS	1
+#define DEFAULT_DEBUG_BUS	0
 	// Will show messages that are not otherwise explicitly handled
 	// by onBusMessage() in WHITE
 #define DEFAULT_DEBUG_SENSORS	1

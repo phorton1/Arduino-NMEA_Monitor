@@ -437,6 +437,86 @@ void myNM::onBusMessage(const tN2kMsg &msg)
 			else
 				my_error("Parsing PGN_TEMPERATURE(130316)",0);
 		}
+		else if (msg.PGN == PGN_ENGINE_RAPID)
+		{
+			unsigned char engine_num;
+			double rpms;
+			double boost;
+			int8_t tilt;
+			if (ParseN2kPGN127488(msg,engine_num,rpms,boost,tilt))
+			{
+				msg_handled = true;
+				if (m_DEBUG_SENSORS)
+					display(0,"rpms(%d)     : %d",msg_counter,((int) rpms) );
+			}
+			else
+				my_error("Parsing PGN_ENGINE_RAPID",0);
+		}
+		else if (msg.PGN == PGN_ENGINE_DYNAMIC)
+		{
+			unsigned char engine_num;
+			double oil_pressure;
+			double oil_temp;
+			double coolant_temp;
+			double alt_voltage;
+			double fuel_rate;
+			double hours;
+			double coolant_pressure;
+			double fuel_pressure;
+			int8_t load;
+			int8_t torque;
+			tN2kEngineDiscreteStatus1 status1;
+			tN2kEngineDiscreteStatus2 status2;
+
+			#define PSI_TO_PASCAL		6895.0
+			#define GALLON_TO_LITRE		3.785
+
+			if (ParseN2kPGN127489(msg,
+					engine_num,			// EngineInstance
+					oil_pressure,		// EngineOilPress      in Pascal
+					oil_temp,			// EngineOilTemp       in Kelvin
+					coolant_temp,		// EngineCoolantTemp   in Kelvin
+					alt_voltage,		// AltenatorVoltage    in Voltage
+					fuel_rate,			// FuelRate            in litres/hour
+					hours,				// EngineHours         in seconds
+					coolant_pressure,	// EngineCoolantPress  in Pascal
+					fuel_pressure,		// EngineFuelPress     in Pascal
+					load,				// EngineLoad          in %
+					torque,				// EngineTorque        in %
+					status1,			// Status1             Engine Discrete Status 1
+					status2))			// Status2             Engine Discrete Status 2
+			{
+				msg_handled = true;
+				if (m_DEBUG_SENSORS)
+					display(0,"engine(%d)   : temp(%0.0f) pres(%0.0f) volts(%0.1f) rate(%0.1f)",
+						msg_counter,
+						KelvinToF(coolant_temp),
+						oil_pressure/PSI_TO_PASCAL,
+						alt_voltage,
+						fuel_rate / GALLON_TO_LITRE);
+			}
+			else
+				my_error("Parsing PGN_ENGINE_DYNAMIC",0);
+		}
+		else if (msg.PGN == PGN_FLUID_LEVEL)
+		{
+			unsigned char instance;
+			tN2kFluidType fluid_type;
+			double level;
+			double capacity;
+			if (ParseN2kPGN127505(msg, instance, fluid_type, level, capacity))
+			{
+				msg_handled = true;
+				if (m_DEBUG_SENSORS)
+					display(0,"fuel(%d)     : tank(%d) = %d%%",
+						msg_counter,
+						instance,
+						(int) level);
+			}
+			else
+				my_error("Parsing PGN_FLUID_LEVEL",0);
+		}
+
 	}	// 255 or MONITOR_NMEA_ADDRESS
 
 

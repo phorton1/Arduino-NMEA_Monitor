@@ -59,8 +59,104 @@ void setup()
 }
 
 
+
+//--------------------------------------------
+// low level canbus output debug display
+//--------------------------------------------
+
+#define DEBUG_MCP2515_OUT_LOW	0
+
+#if DEBUG_MCP2515_OUT_LOW
+	// overrides weakly linked prh_dbg_mcp2515_write() method
+	// in #ifdef PRH_MODS in /libraries/CAN_BUS_Shield/mcp_can.cpp
+	// to circular buffer the bytes written in the interrupt handler
+	// and display() the in the main thread loop() method.
+	// This was useful in the initial debugging of NMEA2000 to my Raymarine E80 MFD.
+
+	#define MAX_CAN_MESSAGES	100
+
+	typedef struct
+	{
+		byte len;
+		byte first[4];
+		byte buf[8];
+	} dbg_msg_t;
+
+
+	static volatile bool in_debug = 0;
+	static int can_head = 0;
+	static int can_tail = 0;
+	static dbg_msg_t dbg_msgs[MAX_CAN_MESSAGES];
+
+
+	void prh_dbg_mcp2515_write(byte *first, volatile const byte *buf, byte len)
+	{
+		int new_head = can_head  + 1;
+		if (new_head >= MAX_CAN_MESSAGES)
+			new_head = 0;
+		if (new_head == can_tail)
+		{
+			my_error("DBG_CAN_MSG BUFFER OVERFLOW",0);
+			return;
+		}
+
+		in_debug = 1;
+		dbg_msg_t *msg = &dbg_msgs[can_head++];
+		if (can_head >= MAX_CAN_MESSAGES)
+			can_head = 0;
+
+		msg->len = len;
+		memcpy(msg->first,first,4);
+		memcpy(msg->buf,(const void*) buf,len);
+		in_debug = 0;
+	}
+
+
+	static void show_dbg_can_messages()
+	{
+		int head = can_head;
+		if (in_debug)
+			return;
+
+		while (can_tail != head)
+		{
+			dbg_msg_t *msg = &dbg_msgs[can_tail++];
+			if (can_tail >= MAX_CAN_MESSAGES)
+				can_tail = 0;
+
+			static char obuf[80];
+			static int ocounter = 0;
+			sprintf(obuf,"(%d) --> %02x%02x%02x%02x ",
+				ocounter++,
+				msg->first[0],
+				msg->first[1],
+				msg->first[2],
+				msg->first[3]);
+
+			int olen = strlen(obuf);
+			for (int i=0; i<msg->len; i++)
+			{
+				sprintf(&obuf[olen],"%02x ",msg->buf[i]);
+				olen += 3;
+			}
+			Serial.println(obuf);
+		}
+	}
+#endif
+
+
+
+//--------------------------------------------
+// loop()
+//--------------------------------------------
+
+
 void loop()
 {
+	#if DEBUG_MCP2515_OUT_LOW
+		show_dbg_can_messages();
+	#endif
+
 	my_nm.loop();
 }
 

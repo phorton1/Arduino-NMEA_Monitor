@@ -34,12 +34,20 @@
 
 #define dbg_mon 	0
 
+#define ALIVE_LED		2
+#define ALIVE_OFF_TIME	980
+#define ALIVE_ON_TIME	20
 
 myNM my_nm;
 
 
 void setup()
 {
+	#if ALIVE_LED
+		pinMode(ALIVE_LED,OUTPUT);
+		digitalWrite(ALIVE_LED,1);
+	#endif
+
 	Serial.begin(921600);
 	delay(1000);
 	Serial.println("WTF");
@@ -56,6 +64,10 @@ void setup()
 
 	proc_leave();
 	display(dbg_mon,"NMEA_Monitor.ino setup() finished",0);
+
+	#if ALIVE_LED
+		digitalWrite(ALIVE_LED,0);
+	#endif
 }
 
 
@@ -158,5 +170,18 @@ void loop()
 	#endif
 
 	my_nm.loop();
+
+	#if ALIVE_LED
+		static bool alive_on = 0;
+		static uint32_t last_alive_time = 0;
+		uint32_t alive_now = millis();
+		uint32_t alive_delay = alive_on ? ALIVE_ON_TIME : ALIVE_OFF_TIME;
+		if (alive_now - last_alive_time >= alive_delay)
+		{
+			alive_on = !alive_on;
+			digitalWrite(ALIVE_LED,alive_on);
+			last_alive_time = alive_now;
+		}
+	#endif
 }
 
